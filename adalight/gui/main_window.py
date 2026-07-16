@@ -92,6 +92,7 @@ _THEME_LABELS = {"dark": "Тёмная", "light": "Светлая", "system": "�
 _THEMES = tuple(_THEME_LABELS)
 _BAUDS = ("115200", "230400", "460800", "500000", "921600", "1000000", "2000000")
 _APPLY_DELAY_S = 5
+_UPDATE_RETRY_MS = 30 * 60 * 1000  # повтор тихой проверки обновлений
 _BOOT_RETRY_MAX = 30
 _BOOT_RETRY_DELAY_MS = 10_000
 _INSTANCE_KEY = "adalight-single-instance"
@@ -858,14 +859,23 @@ class MainWindow(QMainWindow):
     def _check_updates(self, silent: bool = False) -> None:
         self._update_thread = UpdateCheckThread(self)
         self._update_thread.result.connect(self._on_update_result)
-        if not silent:
-            self._update_thread.failed.connect(
-                lambda msg: self.lbl_update.setText(f"Ошибка проверки: {msg}")
-            )
+        if silent:
+            # GitHub бывает недоступен (сбой, сеть) — тихо пробуем ещё раз позже
+            self._update_thread.failed.connect(self._schedule_silent_update_retry)
+        else:
+            self._update_thread.failed.connect(self._on_update_check_failed)
             self.lbl_update.setText("Проверяю…")
         self._update_thread.start()
 
+    def _schedule_silent_update_retry(self, _message: str) -> None:
+        QTimer.singleShot(_UPDATE_RETRY_MS, lambda: self._check_updates(silent=True))
+
+    def _on_update_check_failed(self, message: str) -> None:
+        self.lbl_update.setText("Не удалось связаться с GitHub — попробуйте позже")
+        self.lbl_update.setToolTip(message)
+
     def _on_update_result(self, version: str, page_url: str, asset_url: str) -> None:
+        self.lbl_update.setToolTip("")
         if not updates.is_newer(version, __version__):
             self.lbl_update.setText(f"Текущая версия: {__version__} — последняя")
             return
