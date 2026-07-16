@@ -1,26 +1,34 @@
 # Adalight
 
-Фоновая подсветка (ambilight) для LED-ленты по протоколу **Adalight**: программа
-захватывает экран, вычисляет цвета по краям и отправляет их на Arduino/ESP по serial.
+**English** | [Русский](README.ru.md)
 
-Работает на **Windows** (DXGI Desktop Duplication через `dxcam`, fallback — `mss`)
-и **Linux/Wayland** (Hyprland/wlroots: `wf-recorder`, fallback — `grim`).
+Screen-edge ambient lighting (ambilight) for an LED strip behind your monitor:
+the app captures the screen, averages the colors along the edges and streams
+them to an Arduino/ESP over the classic **Adalight** serial protocol.
 
-## Возможности
+Runs on **Windows** (DXGI Desktop Duplication via `dxcam`, `mss` fallback) and
+**Linux/Wayland** (Hyprland/wlroots: `wf-recorder`, `grim` fallback), with a
+Qt (PySide6) GUI: every setting in one window, a live preview of the LED
+layout, and a tray icon so the lighting keeps running with the window closed.
 
-- Графический интерфейс (PySide6): все настройки в одном окне, живой предпросмотр
-  раскладки диодов, иконка в трее.
-- Настройка: serial-порт и скорость, **порядок каналов** (RGB/GRB/BGR/…),
-  количество диодов на каждой стороне, стартовый угол и направление ленты,
-  выбор монитора, FPS, гамма/яркость/насыщенность/сглаживание.
-- Тестовые режимы для калибровки: заливка сторон цветами и «бегущий диод».
-- CLI для headless-запуска (например, из автозагрузки).
-- Конфиг хранится в JSON: `%APPDATA%\adalight\config.json` (Windows)
-  или `~/.config/adalight/config.json` (Linux).
+## Features
 
-## Запуск из исходников
+- Serial port with autodetection, baud rate, **channel order** (RGB/GRB/BGR/…) —
+  WS2812 strips usually expect GRB.
+- LED counts per side, start corner, strip direction (cw/ccw), X/Y mirroring.
+- Monitor selection, target FPS, gamma / brightness / saturation / smoothing.
+- Calibration test modes: color-per-side fill and a running-dot chase.
+- Headless CLI for autostart setups; GUI and CLI share the same JSON config
+  (`%APPDATA%\adalight\config.json` on Windows, `~/.config/adalight/` on Linux).
 
-Нужен [uv](https://docs.astral.sh/uv/):
+## Download (Windows)
+
+Grab `Adalight.exe` from the [latest release](https://github.com/xvin84/Adalight/releases) —
+no Python required.
+
+## Run from source
+
+Requires [uv](https://docs.astral.sh/uv/):
 
 ```bash
 uv sync
@@ -28,55 +36,54 @@ uv sync
 # GUI
 uv run main.py
 
-# Headless-подсветка и сервисные режимы
+# headless & service modes
 uv run main.py --live
-uv run main.py --sides          # тест: верх=красный, право=зелёный, низ=синий, лево=жёлтый
-uv run main.py --chase          # тест: бегущий диод
-uv run main.py --off            # погасить ленту
+uv run main.py --sides          # test: top=red, right=green, bottom=blue, left=yellow
+uv run main.py --chase          # test: running dot
+uv run main.py --off            # turn the strip off
 uv run main.py --list-monitors
 uv run main.py --list-ports
 ```
 
-## Сборка exe для Windows
+## Calibration
 
-```bash
-uv sync --dev
-uv run pyinstaller --noconfirm --onefile --windowed --name Adalight --collect-submodules comtypes main.py
-# результат: dist/Adalight.exe
-```
+1. Start **“Test: sides”**: the top edge must light up red, right green,
+   bottom blue, left yellow. If sides are mixed up, adjust the start corner,
+   direction or mirroring — the preview in the window mirrors your changes live.
+2. If the *hues* are wrong (red shows as green etc.), change the channel order —
+   WS2812 is usually GRB.
+3. **“Test: chase”** runs a single bright dot along the strip to verify the
+   exact LED order; the first LED is marked with a ring in the preview.
 
-## Релизы (CI/CD)
+## How it works
 
-- **CI** (`.github/workflows/ci.yml`): на каждый push/PR — ruff + pytest.
-- **Release** (`.github/workflows/release.yml`): при пуше тега `v*` собирается
-  `Adalight.exe` под Windows и публикуется GitHub Release. Версия тега должна
-  совпадать с версией в `pyproject.toml`.
-
-Выпуск новой версии:
-
-```bash
-# 1. поднять version в pyproject.toml и adalight/__init__.py, закоммитить
-# 2. затем:
-git tag v0.2.0
-git push origin v0.2.0
-```
-
-## Протокол
-
-Классический Adalight: заголовок `"Ada" + count_hi + count_lo + (hi^lo^0x55)`,
-далее по 3 байта на диод в порядке каналов, заданном в настройках
-(WS2812 обычно ожидает GRB).
-
-## Структура
+- Header `"Ada" + count_hi + count_lo + (hi^lo^0x55)`, then 3 bytes per LED —
+  the standard Adalight protocol, compatible with common Arduino sketches.
+- Edge zones are precomputed per LED from the layout; each frame is averaged
+  per zone, exponentially smoothed and gamma-corrected through a precomputed
+  LUT (no per-frame `pow`).
+- The capture/processing loop is Qt-free (`adalight/engine.py`); the GUI runs
+  it in a background thread, the CLI drives it directly.
 
 ```
 adalight/
-  config.py        # dataclass конфигурации + JSON load/save
-  geometry.py      # раскладка диодов и зоны захвата
-  device.py        # протокол Adalight, LUT-гамма, порядок каналов
-  engine.py        # цикл захват->обработка->отправка (без Qt)
-  capture/         # бэкенды: dxcam (Windows), mss, wf-recorder, grim
-  cli.py           # headless-режимы
-  gui/             # PySide6: главное окно, предпросмотр, трей
-main.py            # входная точка: GUI без аргументов, иначе CLI
+  config.py        # settings dataclass + JSON load/save
+  geometry.py      # LED layout and capture zones
+  device.py        # Adalight protocol, LUT gamma, channel order
+  engine.py        # capture -> process -> send loop (no Qt)
+  capture/         # backends: dxcam (Windows), mss, wf-recorder, grim
+  cli.py           # headless modes
+  gui/             # PySide6: main window, preview, tray
+main.py            # entry point: GUI without args, CLI otherwise
 ```
+
+## Releases
+
+- **CI** (`.github/workflows/ci.yml`): ruff + pytest on every push/PR.
+- **Release** (`.github/workflows/release.yml`): pushing a `v*` tag builds
+  `Adalight.exe` with PyInstaller on a Windows runner and publishes a GitHub
+  Release. The tag must match the version in `pyproject.toml`.
+
+## License
+
+[MIT](LICENSE)

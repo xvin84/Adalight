@@ -1,8 +1,9 @@
 [project]
 name = "adalight"
 version = "0.2.0"
-description = "Adalight ambilight: захват экрана и управление LED-лентой (Windows + Linux/Wayland), GUI на PySide6"
+description = "Screen-edge ambilight for LED strips over the Adalight serial protocol: Windows (DXGI) and Linux/Wayland capture, PySide6 GUI"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "numpy>=1.26",
