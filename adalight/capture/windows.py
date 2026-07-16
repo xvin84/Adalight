@@ -35,8 +35,11 @@ class _DuplicationBackend(BaseBackend):
     WARMUP_S = 2.0
 
     def __init__(self, cfg: Config, module) -> None:
+        # BGRA — «сырой» формат DXGI: конвертация в RGB у bettercam/dxcam идёт
+        # через cv2, который они не объявляют зависимостью; BGRA обходит cv2,
+        # а в RGB переворачиваем сами одним numpy-срезом
         self._cam = module.create(
-            output_idx=parse_output_index(cfg.output), output_color="RGB"
+            output_idx=parse_output_index(cfg.output), output_color="BGRA"
         )
         if self._cam is None:
             raise CaptureError(f"{module.__name__} не смог инициализировать захват экрана")
@@ -50,7 +53,10 @@ class _DuplicationBackend(BaseBackend):
             time.sleep(0.05)
 
     def get_frame(self) -> np.ndarray | None:
-        return self._cam.grab()  # None, если кадр не обновился
+        frame = self._cam.grab()  # None, если кадр не обновился
+        if frame is None:
+            return None
+        return frame[..., 2::-1]  # BGRA -> RGB
 
     def close(self) -> None:
         try:
