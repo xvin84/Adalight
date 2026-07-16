@@ -140,6 +140,38 @@ def test_set_tuning_brightness_applies_live():
     assert after < before / 3
 
 
+def test_night_mode_dims_and_warms():
+    day_serial, _ = run_engine_briefly(make_cfg(target_fps=120), FakeBackend(color=(200, 200, 200)))
+    night_serial, _ = run_engine_briefly(
+        make_cfg(target_fps=120, night_mode=True), FakeBackend(color=(200, 200, 200))
+    )
+    day = np.frombuffer(day_serial.frames[-1][6:], np.uint8).reshape(-1, 3)
+    night = np.frombuffer(night_serial.frames[-1][6:], np.uint8).reshape(-1, 3)
+    assert night.max() < day.max()          # темнее
+    assert night[0, 2] < night[0, 0] * 0.7  # синий канал задавлен (теплее)
+
+
+def test_lamp_mode_sends_solid_color():
+    cfg = make_cfg(target_fps=120, mode="lamp", lamp_effect="solid", lamp_color="#ff0000")
+    fake_serial = FakeSerial()
+    emitted = []
+    engine = Engine(cfg, on_colors=emitted.append)
+    engine.device.connect = lambda: setattr(engine.device, "ser", fake_serial)
+
+    t = threading.Thread(target=engine.run, args=("lamp",))
+    t.start()
+    deadline = time.time() + 5.0
+    while len(fake_serial.frames) < 3 and time.time() < deadline:
+        time.sleep(0.01)
+    engine.stop()
+    t.join(timeout=5.0)
+    assert not t.is_alive()
+
+    colors = np.frombuffer(fake_serial.frames[-2][6:], np.uint8).reshape(-1, 3)
+    assert np.all(colors[:, 0] > 200)  # красный горит
+    assert np.all(colors[:, 1] == 0) and np.all(colors[:, 2] == 0)
+
+
 def test_band_rects_and_localize_roundtrip():
     cfg = make_cfg(band_size=0.2, window_size=0.1)
     geom = LedGeometry(cfg)

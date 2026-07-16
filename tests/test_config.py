@@ -51,6 +51,13 @@ def test_validate_accepts_defaults():
         {"schedule_enabled": True, "schedule": [{"start": "8", "end": "9", "brightness": 1}]},
         {"adaptive_min": 0.9, "adaptive_max": 0.2},
         {"adaptive_speed": 0.0},
+        {"mode": "disco"},
+        {"lamp_effect": "strobe"},
+        {"lamp_color": "красный"},
+        {"music_effect": "waves"},
+        {"music_gain": 0.0},
+        {"color_temp": 500},
+        {"black_threshold": 0.9},
     ],
 )
 def test_validate_rejects_bad_values(kw):

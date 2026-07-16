@@ -39,6 +39,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--version", action="version", version=f"adalight {__version__}")
     ap.add_argument("--live", action="store_true", help="Запустить подсветку без GUI")
+    ap.add_argument("--lamp", action="store_true", help="Режим «лампа» без GUI")
+    ap.add_argument("--music", action="store_true", help="Цветомузыка без GUI")
     ap.add_argument("--sides", action="store_true", help="Тест: заливка сторон разными цветами")
     ap.add_argument("--chase", action="store_true", help="Тест: бегущий диод")
     ap.add_argument("--off", action="store_true", help="Погасить ленту и выйти")
@@ -67,6 +69,10 @@ def main(argv: list[str] | None = None) -> int:
         mode = "chase"
     elif args.sides:
         mode = "sides"
+    elif args.lamp:
+        mode = "lamp"
+    elif args.music:
+        mode = "music"
     else:
         mode = "live"
 

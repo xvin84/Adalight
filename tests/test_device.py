@@ -6,6 +6,7 @@ from adalight.device import (
     build_gamma_lut,
     build_header,
     color_order_indices,
+    kelvin_to_rgb,
 )
 
 
@@ -47,6 +48,29 @@ def test_process_applies_gamma_via_lut():
     out = dev.process(colors)
     expected = round((128 / 255) ** 2.0 * 255)
     assert np.all(np.abs(out.astype(int) - expected) <= 1)
+
+
+def test_black_threshold_cuts_shadows():
+    lut = build_gamma_lut(gamma=1.0, brightness=1.0, black_threshold=0.1)
+    assert np.all(lut[:25] == 0)   # ниже порога — ноль
+    assert np.all(lut[26:] > 0)    # выше — живой сигнал
+
+
+def test_kelvin_neutral_and_warm():
+    neutral = kelvin_to_rgb(6500)
+    assert np.allclose(neutral, 1.0, atol=0.07)  # 6500K почти нейтрален
+    warm = kelvin_to_rgb(3000)
+    assert warm[0] == 1.0 and warm[2] < 0.6      # тёплый: красный полный, синий задавлен
+    cold = kelvin_to_rgb(10000)
+    assert cold[2] == 1.0 and cold[0] < 1.0      # холодный: синий полный
+
+
+def test_process_applies_color_temp():
+    cfg = Config(gamma=1.0, brightness=1.0, saturation=1.0, color_temp=3000)
+    dev = AdalightDevice(cfg)
+    out = dev.process(np.full((cfg.total_leds, 3), 200.0))
+    r, g, b = out[0].astype(int)
+    assert r > g > b  # тёплый белый
 
 
 def test_process_saturation_keeps_gray():

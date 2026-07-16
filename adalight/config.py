@@ -14,8 +14,22 @@ COLOR_ORDERS = ("RGB", "GRB", "BGR", "RBG", "GBR", "BRG")
 START_CORNERS = ("top-left", "top-right", "bottom-left", "bottom-right")
 DIRECTIONS = ("cw", "ccw")
 BACKENDS = ("auto", "bettercam", "dxcam", "mss", "wfrecorder", "grim")
+MODES = ("capture", "lamp", "music")
+LAMP_EFFECTS = ("solid", "gradient", "rainbow", "breathing")
+MUSIC_EFFECTS = ("spectrum", "pulse")
 
 APP_NAME = "adalight"
+
+
+def parse_hex_color(value: str) -> tuple[int, int, int]:
+    """'#RRGGBB' -> (r, g, b); бросает ValueError на мусор."""
+    s = str(value).strip().lstrip("#")
+    if len(s) != 6:
+        raise ValueError(f"Неверный цвет: {value!r} (ожидается #RRGGBB)")
+    try:
+        return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+    except ValueError as e:
+        raise ValueError(f"Неверный цвет: {value!r} (ожидается #RRGGBB)") from e
 
 
 def default_config_path() -> Path:
@@ -76,6 +90,25 @@ class Config:
     adaptive_max: float = 1.0
     adaptive_speed: float = 0.05  # доля пути до цели за кадр (0..1]
 
+    # Конвейер цвета
+    color_temp: int = 6500        # цветовая температура, K (6500 = нейтрально)
+    black_threshold: float = 0.0  # отсечка шума в тенях, доля 0..0.5
+    night_mode: bool = False      # теплее, темнее, плавнее
+
+    # Режим работы
+    mode: str = "capture"  # capture | lamp | music
+
+    # Лампа
+    lamp_effect: str = "solid"  # solid | gradient | rainbow | breathing
+    lamp_color: str = "#ff9329"
+    lamp_color2: str = "#2962ff"
+    lamp_speed: float = 0.5  # 0..1
+
+    # Цветомузыка
+    music_effect: str = "spectrum"  # spectrum | pulse
+    music_color: str = "#ff2d95"
+    music_gain: float = 1.0  # 0.1..5
+
     @property
     def total_leds(self) -> int:
         return self.leds_top + self.leds_right + self.leds_bottom + self.leds_left
@@ -109,6 +142,22 @@ class Config:
             raise ValueError("Адаптивная яркость: нужно 0 <= мин <= макс <= 2")
         if not 0.0 < self.adaptive_speed <= 1.0:
             raise ValueError("Адаптивная яркость: скорость должна быть в диапазоне (0, 1]")
+        if not 1000 <= self.color_temp <= 10000:
+            raise ValueError("Цветовая температура должна быть в диапазоне 1000..10000 K")
+        if not 0.0 <= self.black_threshold <= 0.5:
+            raise ValueError("Порог теней должен быть в диапазоне 0..0.5")
+        if self.mode not in MODES:
+            raise ValueError(f"Неверный режим: {self.mode!r}")
+        if self.lamp_effect not in LAMP_EFFECTS:
+            raise ValueError(f"Неверный эффект лампы: {self.lamp_effect!r}")
+        if self.music_effect not in MUSIC_EFFECTS:
+            raise ValueError(f"Неверный эффект цветомузыки: {self.music_effect!r}")
+        for name in ("lamp_color", "lamp_color2", "music_color"):
+            parse_hex_color(getattr(self, name))  # бросает ValueError
+        if not 0.0 <= self.lamp_speed <= 1.0:
+            raise ValueError("Скорость эффекта лампы должна быть в диапазоне 0..1")
+        if not 0.1 <= self.music_gain <= 5.0:
+            raise ValueError("Чувствительность цветомузыки должна быть в диапазоне 0.1..5")
 
     @classmethod
     def load(cls, path: Path | None = None) -> Config:

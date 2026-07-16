@@ -19,10 +19,16 @@ import numpy as np
 from .capture import create_backend
 from .config import Config
 from .device import AdalightDevice
+from .effects import MusicRenderer, render_lamp
 from .geometry import LedGeometry, Slice
 from .schedule import ScheduleRule, brightness_at, parse_rules
 
-Mode = Literal["live", "chase", "sides", "off"]
+Mode = Literal["live", "lamp", "music", "chase", "sides", "off"]
+
+# Ночной режим: теплее, темнее, плавнее
+NIGHT_COLOR_TEMP = 3400
+NIGHT_BRIGHTNESS_FACTOR = 0.6
+NIGHT_MIN_SMOOTH = 0.7
 
 SIDE_TEST_PALETTE = {
     "top": (255, 0, 0),      # красный
@@ -89,8 +95,31 @@ class Engine:
         self._adaptive_max = cfg.adaptive_max
         self._adaptive_speed = cfg.adaptive_speed
 
+        self._night = cfg.night_mode
+        self._color_temp = cfg.color_temp
+        self._lamp = {
+            "lamp_effect": cfg.lamp_effect,
+            "lamp_color": cfg.lamp_color,
+            "lamp_color2": cfg.lamp_color2,
+            "lamp_speed": cfg.lamp_speed,
+        }
+        self._music = {
+            "music_effect": cfg.music_effect,
+            "music_color": cfg.music_color,
+            "music_gain": cfg.music_gain,
+        }
+        self._music_dirty = False
+
         self._lum_smoothed = 0.5  # сглаженная яркость сцены 0..1
         self._applied_brightness: float | None = None
+        self._apply_color_temp()
+
+    def _apply_color_temp(self) -> None:
+        temp = min(self._color_temp, NIGHT_COLOR_TEMP) if self._night else self._color_temp
+        self.device.set_tuning(color_temp=temp)
+
+    def _effective_smooth(self) -> float:
+        return max(self._smooth, NIGHT_MIN_SMOOTH) if self._night else self._smooth
 
     def stop(self) -> None:
         self._stop.set()
@@ -108,6 +137,16 @@ class Engine:
         adaptive_min: float | None = None,
         adaptive_max: float | None = None,
         adaptive_speed: float | None = None,
+        color_temp: int | None = None,
+        black_threshold: float | None = None,
+        night_mode: bool | None = None,
+        lamp_effect: str | None = None,
+        lamp_color: str | None = None,
+        lamp_color2: str | None = None,
+        lamp_speed: float | None = None,
+        music_effect: str | None = None,
+        music_color: str | None = None,
+        music_gain: float | None = None,
     ) -> None:
         """Применение «мягких» настроек на лету. schedule — сырой список из конфига."""
         with self._lock:
@@ -127,12 +166,39 @@ class Engine:
                 self._adaptive_max = adaptive_max
             if adaptive_speed is not None:
                 self._adaptive_speed = adaptive_speed
-            self.device.set_tuning(gamma=gamma, saturation=saturation)
+            if color_temp is not None:
+                self._color_temp = color_temp
+            if night_mode is not None:
+                self._night = night_mode
+            for key, value in (
+                ("lamp_effect", lamp_effect),
+                ("lamp_color", lamp_color),
+                ("lamp_color2", lamp_color2),
+                ("lamp_speed", lamp_speed),
+            ):
+                if value is not None:
+                    self._lamp[key] = value
+            for key, value in (
+                ("music_effect", music_effect),
+                ("music_color", music_color),
+                ("music_gain", music_gain),
+            ):
+                if value is not None and self._music[key] != value:
+                    self._music[key] = value
+                    self._music_dirty = True
+            self.device.set_tuning(
+                gamma=gamma, saturation=saturation, black_threshold=black_threshold
+            )
+            self._apply_color_temp()
             self._applied_brightness = None  # форсируем пересчёт итоговой яркости
 
     def run(self, mode: Mode = "live") -> None:
         if mode == "live":
             self._run_live()
+        elif mode == "lamp":
+            self._run_lamp()
+        elif mode == "music":
+            self._run_music()
         elif mode == "chase":
             self._run_chase()
         elif mode == "sides":
@@ -161,6 +227,8 @@ class Engine:
                 self._lum_smoothed += (lum - self._lum_smoothed) * self._adaptive_speed
                 lo, hi = self._adaptive_min, self._adaptive_max
                 base *= lo + (hi - lo) * self._lum_smoothed
+            if self._night:
+                base *= NIGHT_BRIGHTNESS_FACTOR
         return round(base, 2)  # квантуем, чтобы не перестраивать LUT каждый кадр
 
     def _apply_brightness(self, raw: np.ndarray | None) -> None:
@@ -218,7 +286,7 @@ class Engine:
 
                 if got_frame:
                     self._apply_brightness(raw)
-                    s = self._smooth
+                    s = self._effective_smooth()
                     smoothed *= s
                     smoothed += raw * (1.0 - s)
                     final = self.device.send_processed(smoothed)
@@ -237,6 +305,68 @@ class Engine:
         finally:
             self.device.close()
             backend.close()
+
+    def _run_lamp(self) -> None:
+        """Режим «лампа»: эффект без захвата экрана. Параметры меняются на лету."""
+        self.device.connect()
+        try:
+            n = self.cfg.total_leds
+            frame_time = 1.0 / min(self.cfg.target_fps, 60)
+            t0 = time.monotonic()
+            while not self._stop.is_set():
+                tick = time.monotonic()
+                with self._lock:
+                    lamp = dict(self._lamp)
+                raw = render_lamp(lamp, n, tick - t0)
+                self._apply_brightness(None)
+                final = self.device.send_processed(raw)
+                self._emit(final)
+                dt = time.monotonic() - tick
+                if dt < frame_time:
+                    self._stop.wait(frame_time - dt)
+        finally:
+            self.device.close()
+
+    def _run_music(self) -> None:
+        """Цветомузыка: системный loopback-звук -> спектр/пульс на ленте."""
+        from .audio import LoopbackAudio  # импорт при использовании: тянет soundcard
+
+        audio = LoopbackAudio()
+        try:
+            n = self.cfg.total_leds
+            renderer = self._make_music_renderer(n)
+            if self._on_backend is not None:
+                self._on_backend(f"audio {audio.samplerate} Гц")
+            self.device.connect()
+            fps_t0, fps_n = time.monotonic(), 0
+            while not self._stop.is_set():
+                block = audio.read()  # блокирует на ~blocksize/rate (~21 мс)
+                with self._lock:
+                    if self._music_dirty:
+                        renderer = self._make_music_renderer(n)
+                        self._music_dirty = False
+                raw = renderer.render(block, audio.samplerate)
+                self._apply_brightness(None)
+                final = self.device.send_processed(raw)
+                self._emit(final)
+
+                fps_n += 1
+                now = time.monotonic()
+                if now - fps_t0 >= 1.0:
+                    if self._on_fps is not None:
+                        self._on_fps(fps_n / (now - fps_t0))
+                    fps_t0, fps_n = now, 0
+        finally:
+            audio.close()
+            self.device.close()
+
+    def _make_music_renderer(self, n: int) -> MusicRenderer:
+        return MusicRenderer(
+            effect=self._music["music_effect"],
+            color=self._music["music_color"],
+            gain=self._music["music_gain"],
+            n_leds=n,
+        )
 
     def _run_chase(self) -> None:
         self.device.connect()

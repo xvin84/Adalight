@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 
 import numpy as np
@@ -12,6 +13,36 @@ from .config import Config
 
 class DeviceError(RuntimeError):
     pass
+
+
+def _kelvin_raw(kelvin: float) -> np.ndarray:
+    """Аппроксимация Таннера Хелланда: температура (K) -> сырые RGB-веса 0..1."""
+    t = min(max(kelvin, 1000.0), 40000.0) / 100.0
+    if t <= 66:
+        r = 255.0
+        g = 99.4708025861 * math.log(t) - 161.1195681661
+    else:
+        r = 329.698727446 * ((t - 60) ** -0.1332047592)
+        g = 288.1221695283 * ((t - 60) ** -0.0755148492)
+    if t >= 66:
+        b = 255.0
+    elif t <= 19:
+        b = 0.0
+    else:
+        b = 138.5177312231 * math.log(t - 10) - 305.0447927307
+    return np.clip([r, g, b], 0.0, 255.0) / 255.0
+
+
+_KELVIN_NEUTRAL = _kelvin_raw(6500.0)
+
+
+def kelvin_to_rgb(kelvin: float) -> np.ndarray:
+    """Цветовая температура (K) -> RGB-множители (максимальный канал = 1).
+
+    Кривая нормирована так, что 6500K — строго нейтральный (1, 1, 1).
+    """
+    rgb = _kelvin_raw(kelvin) / _KELVIN_NEUTRAL
+    return rgb / rgb.max()
 
 
 def build_header(total_leds: int) -> bytes:
@@ -26,10 +57,15 @@ def color_order_indices(order: str) -> tuple[int, int, int]:
     return tuple("RGB".index(c) for c in order.upper())  # type: ignore[return-value]
 
 
-def build_gamma_lut(gamma: float, brightness: float) -> np.ndarray:
-    """LUT 0..255 -> 0..255 c гаммой и яркостью: считается один раз, а не на каждый кадр."""
+def build_gamma_lut(gamma: float, brightness: float, black_threshold: float = 0.0) -> np.ndarray:
+    """LUT 0..255 -> 0..255 c гаммой, яркостью и отсечкой шума в тенях.
+
+    Считается один раз, а не на каждый кадр. Входные значения ниже
+    black_threshold (доля 0..1) гасятся в ноль — тёмный шум не подсвечивает ленту.
+    """
     x = np.arange(256, dtype=np.float64) / 255.0
     y = np.power(x, gamma) * brightness * 255.0
+    y[x < black_threshold] = 0.0
     return np.clip(y, 0.0, 255.0).astype(np.uint8)
 
 
@@ -42,13 +78,17 @@ class AdalightDevice:
         self._gamma = cfg.gamma
         self._brightness = cfg.brightness
         self._saturation = cfg.saturation
-        self._lut = build_gamma_lut(self._gamma, self._brightness)
+        self._black_threshold = cfg.black_threshold
+        self._temp_rgb = kelvin_to_rgb(cfg.color_temp)
+        self._lut = build_gamma_lut(self._gamma, self._brightness, self._black_threshold)
 
     def set_tuning(
         self,
         gamma: float | None = None,
         brightness: float | None = None,
         saturation: float | None = None,
+        color_temp: float | None = None,
+        black_threshold: float | None = None,
     ) -> None:
         """Смена цветокоррекции на лету — без переоткрытия порта (и без ресета платы)."""
         rebuild = False
@@ -56,10 +96,14 @@ class AdalightDevice:
             self._gamma, rebuild = gamma, True
         if brightness is not None and brightness != self._brightness:
             self._brightness, rebuild = brightness, True
+        if black_threshold is not None and black_threshold != self._black_threshold:
+            self._black_threshold, rebuild = black_threshold, True
         if saturation is not None:
             self._saturation = saturation
+        if color_temp is not None:
+            self._temp_rgb = kelvin_to_rgb(color_temp)
         if rebuild:
-            self._lut = build_gamma_lut(self._gamma, self._brightness)
+            self._lut = build_gamma_lut(self._gamma, self._brightness, self._black_threshold)
 
     def connect(self) -> None:
         try:
@@ -84,6 +128,7 @@ class AdalightDevice:
         if self._saturation != 1.0:
             gray = c.mean(axis=1, keepdims=True)
             c = np.clip(gray + (c - gray) * self._saturation, 0.0, 1.0)
+        c = c * self._temp_rgb  # баланс белого / цветовая температура
         return self._lut[(c * 255.0).astype(np.uint8)]
 
     def send_raw(self, colors: np.ndarray) -> None:

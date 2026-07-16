@@ -27,6 +27,15 @@ layout, and a tray icon so the lighting keeps running with the window closed.
   bright ones, with min/max bounds and reaction speed.
 - **Autostart**: launch on login minimized to tray with lighting on
   (Windows registry / XDG autostart).
+- **Lamp mode**: solid color / gradient / rainbow / breathing — the strip works
+  without screen capture.
+- **Music mode**: system loopback audio drives the LEDs — a perimeter spectrum
+  or a bass-driven pulse, with adjustable sensitivity.
+- **Night mode**: one button makes everything warmer (3400K), dimmer (×0.6)
+  and smoother — on top of your current settings.
+- **Color pipeline**: color temperature (white balance) and a shadow noise
+  cut-off so dark scenes don't make the LEDs glow with noise.
+- **Update check**: the app checks GitHub Releases and offers the new version.
 - Calibration test modes: color-per-side fill and a running-dot chase.
 - Headless CLI for autostart setups; GUI and CLI share the same JSON config
   (`%APPDATA%\adalight\config.json` on Windows, `~/.config/adalight/` on Linux).
@@ -41,10 +50,14 @@ layout, and a tray icon so the lighting keeps running with the window closed.
   both fall back to `mss` the reason is shown. The `mss` backend captures only
   the edge bands rather than the full screen.
 
-## Download (Windows)
+## Download
 
-Grab `Adalight.exe` from the [latest release](https://github.com/xvin84/Adalight/releases) —
-no Python required.
+Grab a binary from the [latest release](https://github.com/xvin84/Adalight/releases) —
+no Python required:
+
+- **Windows**: `Adalight.exe`
+- **Linux**: `Adalight-linux-x86_64` (then `chmod +x Adalight-linux-x86_64`;
+  Wayland capture additionally needs `wf-recorder` installed)
 
 ## Run from source
 

@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import Qt, QThread, QTime, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
+from PySide6.QtCore import Qt, QThread, QTime, QTimer, QUrl, Signal
+from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QColorDialog,
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
@@ -39,9 +40,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import __version__, autostart
+from .. import __version__, autostart, updates
 from ..capture import list_outputs
-from ..config import BACKENDS, COLOR_ORDERS, DIRECTIONS, START_CORNERS, Config
+from ..config import (
+    BACKENDS,
+    COLOR_ORDERS,
+    DIRECTIONS,
+    LAMP_EFFECTS,
+    MODES,
+    MUSIC_EFFECTS,
+    START_CORNERS,
+    Config,
+)
 from ..device import list_serial_ports
 from ..engine import Engine, Mode
 from ..schedule import parse_time
@@ -54,6 +64,16 @@ _CORNER_LABELS = {
     "bottom-right": "Нижний правый",
 }
 _DIRECTION_LABELS = {"cw": "По часовой", "ccw": "Против часовой"}
+_MODE_LABELS = {"capture": "Захват экрана", "lamp": "Лампа", "music": "Цветомузыка"}
+_MODE_TO_ENGINE: dict[str, Mode] = {"capture": "live", "lamp": "lamp", "music": "music"}
+_LAMP_EFFECT_LABELS = {
+    "solid": "Сплошной цвет",
+    "gradient": "Градиент",
+    "rainbow": "Радуга",
+    "breathing": "Дыхание",
+}
+_MUSIC_EFFECT_LABELS = {"spectrum": "Спектр по периметру", "pulse": "Пульс от баса"}
+_MAIN_MODES: tuple[Mode, ...] = ("live", "lamp", "music")
 _BAUDS = ("115200", "230400", "460800", "500000", "921600", "1000000", "2000000")
 _APPLY_DELAY_S = 5
 
@@ -98,6 +118,21 @@ class EngineThread(QThread):
     def set_tuning(self, **kwargs) -> None:
         if self._engine is not None:
             self._engine.set_tuning(**kwargs)
+
+
+class UpdateCheckThread(QThread):
+    """Фоновая проверка последнего релиза на GitHub."""
+
+    result = Signal(str, str)  # версия, url
+    failed = Signal(str)
+
+    def run(self) -> None:
+        try:
+            version, url = updates.fetch_latest()
+        except Exception as e:  # noqa: BLE001 — сеть может падать чем угодно
+            self.failed.emit(str(e))
+            return
+        self.result.emit(version, url)
 
 
 class ScheduleDelegate(QStyledItemDelegate):
@@ -197,6 +232,7 @@ class MainWindow(QMainWindow):
         self._build_tray()
         self._loading = False
         self._refresh_preview_layout()
+        QTimer.singleShot(2000, lambda: self._check_updates(silent=True))
 
     # ── построение интерфейса ─────────────────────────────────────────────
 
@@ -210,10 +246,13 @@ class MainWindow(QMainWindow):
         form_host = QWidget()
         left = QVBoxLayout(form_host)
         left.setContentsMargins(0, 0, 6, 0)
+        left.addWidget(self._group_mode())
         left.addWidget(self._group_connection())
         left.addWidget(self._group_leds())
         left.addWidget(self._group_capture())
         left.addWidget(self._group_image())
+        left.addWidget(self._group_lamp())
+        left.addWidget(self._group_music())
         left.addWidget(self._group_adaptive())
         left.addWidget(self._group_schedule())
         left.addWidget(self._group_system())
@@ -240,9 +279,16 @@ class MainWindow(QMainWindow):
         self.btn_apply.setToolTip(
             "Перезапустить подсветку с новыми настройками, не дожидаясь автоприменения"
         )
-        self.btn_apply.clicked.connect(lambda: self._start_engine("live"))
+        self.btn_apply.clicked.connect(lambda: self._start_engine(self._selected_mode()))
+        self.btn_night = QPushButton("🌙 Ночной режим")
+        self.btn_night.setCheckable(True)
+        self.btn_night.setToolTip(
+            "Теплее (3400K), темнее (×0.6) и плавнее — поверх текущих настроек"
+        )
+        self.btn_night.toggled.connect(self._on_soft_changed)
         controls.addWidget(self.btn_start, 1)
         controls.addWidget(self.btn_apply, 1)
+        controls.addWidget(self.btn_night, 1)
         right.addLayout(controls)
 
         calib = QGroupBox("Калибровка")
@@ -273,6 +319,75 @@ class MainWindow(QMainWindow):
         self.statusBar().addWidget(self.lbl_pending)
         self.statusBar().addPermanentWidget(self.lbl_backend)
         self.statusBar().addPermanentWidget(self.lbl_fps)
+
+    def _group_mode(self) -> QGroupBox:
+        g = QGroupBox("Режим")
+        form = QFormLayout(g)
+        self.cb_mode = QComboBox()
+        for value in MODES:
+            self.cb_mode.addItem(_MODE_LABELS[value], value)
+        self.cb_mode.currentIndexChanged.connect(self._on_mode_changed)
+        form.addRow("Источник:", self.cb_mode)
+        return g
+
+    def _group_lamp(self) -> QGroupBox:
+        g = QGroupBox("Лампа")
+        form = QFormLayout(g)
+
+        self.cb_lamp_effect = QComboBox()
+        for value in LAMP_EFFECTS:
+            self.cb_lamp_effect.addItem(_LAMP_EFFECT_LABELS[value], value)
+        self.cb_lamp_effect.currentIndexChanged.connect(self._on_soft_changed)
+        form.addRow("Эффект:", self.cb_lamp_effect)
+
+        self.btn_lamp_color = self._color_button("#ff9329")
+        form.addRow("Цвет:", self.btn_lamp_color)
+        self.btn_lamp_color2 = self._color_button("#2962ff")
+        self.btn_lamp_color2.setToolTip("Второй цвет для градиента")
+        form.addRow("Цвет 2:", self.btn_lamp_color2)
+
+        self.sl_lamp_speed, row = self._slider_row(0, 100)
+        form.addRow("Скорость:", row)
+        return g
+
+    def _group_music(self) -> QGroupBox:
+        g = QGroupBox("Цветомузыка")
+        form = QFormLayout(g)
+
+        self.cb_music_effect = QComboBox()
+        for value in MUSIC_EFFECTS:
+            self.cb_music_effect.addItem(_MUSIC_EFFECT_LABELS[value], value)
+        self.cb_music_effect.currentIndexChanged.connect(self._on_soft_changed)
+        form.addRow("Эффект:", self.cb_music_effect)
+
+        self.btn_music_color = self._color_button("#ff2d95")
+        self.btn_music_color.setToolTip("Цвет для эффекта «Пульс»")
+        form.addRow("Цвет:", self.btn_music_color)
+
+        self.sl_music_gain, row = self._slider_row(10, 500)
+        self.sl_music_gain.setToolTip("Чувствительность: больше — ярче реакция на звук")
+        form.addRow("Чувствительность:", row)
+        return g
+
+    def _color_button(self, initial: str) -> QPushButton:
+        btn = QPushButton()
+        btn.setFixedSize(64, 24)
+        self._set_button_color(btn, initial)
+        btn.clicked.connect(lambda: self._pick_color(btn))
+        return btn
+
+    @staticmethod
+    def _set_button_color(btn: QPushButton, value: str) -> None:
+        btn.setProperty("color_value", value)
+        btn.setStyleSheet(
+            f"background: {value}; border: 1px solid #777; border-radius: 4px;"
+        )
+
+    def _pick_color(self, btn: QPushButton) -> None:
+        color = QColorDialog.getColor(QColor(btn.property("color_value")), self, "Цвет")
+        if color.isValid():
+            self._set_button_color(btn, color.name())
+            self._on_soft_changed()
 
     def _group_connection(self) -> QGroupBox:
         g = QGroupBox("Подключение")
@@ -417,6 +532,26 @@ class MainWindow(QMainWindow):
         form.addRow("Насыщенность:", row)
         self.sl_smooth, row = self._slider_row(0, 95)
         form.addRow("Сглаживание:", row)
+
+        # цветовая температура — со своим форматом подписи (K)
+        self.sl_temp = QSlider(Qt.Orientation.Horizontal)
+        self.sl_temp.setRange(1000, 10000)
+        self.sl_temp.setSingleStep(100)
+        self.sl_temp.setToolTip("6500K — нейтрально, меньше — теплее")
+        lbl = QLabel()
+        lbl.setFixedWidth(48)
+        self.sl_temp.valueChanged.connect(lambda v: lbl.setText(f"{v}K"))
+        self.sl_temp.valueChanged.connect(self._on_soft_changed)
+        row = QHBoxLayout()
+        row.addWidget(self.sl_temp, 1)
+        row.addWidget(lbl)
+        form.addRow("Температура:", row)
+
+        self.sl_black, row = self._slider_row(0, 50)
+        self.sl_black.setToolTip(
+            "Отсечка шума в тенях: сигнал ниже порога гасится в ноль"
+        )
+        form.addRow("Порог теней:", row)
         return g
 
     def _group_adaptive(self) -> QGroupBox:
@@ -487,7 +622,36 @@ class MainWindow(QMainWindow):
             self.ch_autostart.setToolTip("Не поддерживается на этой ОС")
         self.ch_autostart.toggled.connect(self._on_autostart_toggled)
         lay.addWidget(self.ch_autostart)
+
+        row = QHBoxLayout()
+        self.btn_update = QPushButton("Проверить обновления")
+        self.btn_update.clicked.connect(self._check_updates)
+        self.lbl_update = QLabel("")
+        row.addWidget(self.btn_update)
+        row.addWidget(self.lbl_update, 1)
+        lay.addLayout(row)
         return g
+
+    # ── обновления ────────────────────────────────────────────────────────
+
+    def _check_updates(self, silent: bool = False) -> None:
+        self._update_thread = UpdateCheckThread(self)
+        self._update_thread.result.connect(self._on_update_result)
+        if not silent:
+            self._update_thread.failed.connect(
+                lambda msg: self.lbl_update.setText(f"Ошибка проверки: {msg}")
+            )
+            self.lbl_update.setText("Проверяю…")
+        self._update_thread.start()
+
+    def _on_update_result(self, version: str, url: str) -> None:
+        if updates.is_newer(version, __version__):
+            self.lbl_update.setText(f"Доступна версия {version}")
+            self.btn_update.setText(f"⬇ Обновить до v{version}")
+            self.btn_update.clicked.disconnect()
+            self.btn_update.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(url)))
+        else:
+            self.lbl_update.setText("У вас последняя версия")
 
     def _build_tray(self) -> None:
         self.tray: QSystemTrayIcon | None = None
@@ -499,10 +663,16 @@ class MainWindow(QMainWindow):
         act_show.triggered.connect(self._show_from_tray)
         act_start = QAction("Старт/Стоп", menu)
         act_start.triggered.connect(self._on_start_stop)
+        act_night = QAction("Ночной режим", menu)
+        act_night.setCheckable(True)
+        act_night.setChecked(self.btn_night.isChecked())
+        act_night.toggled.connect(self.btn_night.setChecked)
+        self.btn_night.toggled.connect(act_night.setChecked)
         act_quit = QAction("Выход", menu)
         act_quit.triggered.connect(self._quit)
         menu.addAction(act_show)
         menu.addAction(act_start)
+        menu.addAction(act_night)
         menu.addSeparator()
         menu.addAction(act_quit)
         self.tray.setContextMenu(menu)
@@ -542,6 +712,18 @@ class MainWindow(QMainWindow):
         self.sl_bright.setValue(round(cfg.brightness * 100))
         self.sl_sat.setValue(round(cfg.saturation * 100))
         self.sl_smooth.setValue(round(cfg.smooth * 100))
+        self.sl_temp.setValue(cfg.color_temp)
+        self.sl_black.setValue(round(cfg.black_threshold * 100))
+        self.btn_night.setChecked(cfg.night_mode)
+
+        self.cb_mode.setCurrentIndex(MODES.index(cfg.mode))
+        self.cb_lamp_effect.setCurrentIndex(LAMP_EFFECTS.index(cfg.lamp_effect))
+        self._set_button_color(self.btn_lamp_color, cfg.lamp_color)
+        self._set_button_color(self.btn_lamp_color2, cfg.lamp_color2)
+        self.sl_lamp_speed.setValue(round(cfg.lamp_speed * 100))
+        self.cb_music_effect.setCurrentIndex(MUSIC_EFFECTS.index(cfg.music_effect))
+        self._set_button_color(self.btn_music_color, cfg.music_color)
+        self.sl_music_gain.setValue(round(cfg.music_gain * 100))
 
         self.ch_adaptive.setChecked(cfg.adaptive_enabled)
         self.sl_amin.setValue(round(cfg.adaptive_min * 100))
@@ -579,6 +761,17 @@ class MainWindow(QMainWindow):
             brightness=self.sl_bright.value() / 100,
             saturation=self.sl_sat.value() / 100,
             smooth=self.sl_smooth.value() / 100,
+            color_temp=self.sl_temp.value(),
+            black_threshold=self.sl_black.value() / 100,
+            night_mode=self.btn_night.isChecked(),
+            mode=self.cb_mode.currentData(),
+            lamp_effect=self.cb_lamp_effect.currentData(),
+            lamp_color=self.btn_lamp_color.property("color_value"),
+            lamp_color2=self.btn_lamp_color2.property("color_value"),
+            lamp_speed=self.sl_lamp_speed.value() / 100,
+            music_effect=self.cb_music_effect.currentData(),
+            music_color=self.btn_music_color.property("color_value"),
+            music_gain=self.sl_music_gain.value() / 100,
             adaptive_enabled=self.ch_adaptive.isChecked(),
             adaptive_min=self.sl_amin.value() / 100,
             adaptive_max=self.sl_amax.value() / 100,
@@ -658,6 +851,16 @@ class MainWindow(QMainWindow):
 
     # ── применение настроек ───────────────────────────────────────────────
 
+    def _selected_mode(self) -> Mode:
+        return _MODE_TO_ENGINE[self.cb_mode.currentData()]
+
+    def _on_mode_changed(self, *args) -> None:
+        """Смена источника — перезапуск сразу, ждать 5 секунд тут ни к чему."""
+        if self._loading:
+            return
+        if self._mode in _MAIN_MODES and self.thread is not None:
+            self._start_engine(self._selected_mode())
+
     def _on_geometry_changed(self, *args) -> None:
         if self._loading:
             return
@@ -668,7 +871,7 @@ class MainWindow(QMainWindow):
         """«Жёсткая» настройка: перезапуск через 5 с после последнего изменения."""
         if self._loading:
             return
-        if self._mode != "live" or self.thread is None:
+        if self._mode not in _MAIN_MODES or self.thread is None:
             return
         self._apply_left = _APPLY_DELAY_S
         self._apply_timer.start()
@@ -680,7 +883,7 @@ class MainWindow(QMainWindow):
             self.lbl_pending.setText(f"⏱ автоприменение через {self._apply_left} с")
             return
         self._cancel_pending_apply()
-        self._start_engine("live")
+        self._start_engine(self._selected_mode())
 
     def _cancel_pending_apply(self) -> None:
         self._apply_timer.stop()
@@ -691,7 +894,7 @@ class MainWindow(QMainWindow):
         """«Мягкая» настройка: применяется к работающему движку сразу, без ресета платы."""
         if self._loading:
             return
-        if self._mode != "live" or self.thread is None:
+        if self._mode not in _MAIN_MODES or self.thread is None:
             return
         cfg = self._cfg_from_ui()
         try:
@@ -704,12 +907,22 @@ class MainWindow(QMainWindow):
             brightness=cfg.brightness,
             saturation=cfg.saturation,
             smooth=cfg.smooth,
+            color_temp=cfg.color_temp,
+            black_threshold=cfg.black_threshold,
+            night_mode=cfg.night_mode,
             schedule_enabled=cfg.schedule_enabled,
             schedule=cfg.schedule,
             adaptive_enabled=cfg.adaptive_enabled,
             adaptive_min=cfg.adaptive_min,
             adaptive_max=cfg.adaptive_max,
             adaptive_speed=cfg.adaptive_speed,
+            lamp_effect=cfg.lamp_effect,
+            lamp_color=cfg.lamp_color,
+            lamp_color2=cfg.lamp_color2,
+            lamp_speed=cfg.lamp_speed,
+            music_effect=cfg.music_effect,
+            music_color=cfg.music_color,
+            music_gain=cfg.music_gain,
         )
         self.statusBar().showMessage("Применено", 1200)
 
@@ -719,7 +932,7 @@ class MainWindow(QMainWindow):
         if self.thread is not None and self.thread.isRunning():
             self._stop_engine()
         else:
-            self._start_engine("live")
+            self._start_engine(self._selected_mode())
 
     def _start_engine(self, mode: Mode) -> None:
         self._stop_engine()
@@ -743,6 +956,8 @@ class MainWindow(QMainWindow):
 
         names = {
             "live": "Подсветка",
+            "lamp": "Лампа",
+            "music": "Цветомузыка",
             "sides": "Тест сторон",
             "chase": "Бегущий диод",
             "off": "Гашение",
@@ -750,7 +965,7 @@ class MainWindow(QMainWindow):
         self.lbl_state.setText(f"{names[mode]}: работает")
         self.btn_start.setText("■ Стоп")
         self.btn_start.setStyleSheet(_BTN_STOP_QSS)
-        self.btn_apply.setEnabled(mode == "live")
+        self.btn_apply.setEnabled(mode in _MAIN_MODES)
 
     def _stop_engine(self) -> None:
         self._cancel_pending_apply()
@@ -845,7 +1060,8 @@ def run(minimized: bool = False) -> int:
     win = MainWindow()
     win.resize(960, 680)
     if minimized and win.tray is not None:
-        win._start_engine("live")  # автозапуск: сразу подсветка, окно остаётся в трее
+        # автозапуск: сразу включаем сохранённый режим, окно остаётся в трее
+        win._start_engine(win._selected_mode())
     else:
         win.show()
     return app.exec()

@@ -39,6 +39,7 @@ jobs:
           uv run pyinstaller --noconfirm --onefile --windowed
           --name Adalight
           --collect-submodules comtypes
+          --collect-all soundcard
           main.py
 
       - name: Smoke check artifact exists
@@ -48,11 +49,58 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Adalight-windows
+          name: windows-build
           path: dist/Adalight.exe
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system libraries for Qt
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libxkbcommon0 libpulse0
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run tests
+        run: uv run pytest -q
+
+      - name: Build Adalight binary (PyInstaller)
+        run: >
+          uv run pyinstaller --noconfirm --onefile
+          --name Adalight-linux-x86_64
+          --collect-all soundcard
+          main.py
+
+      - name: Smoke check artifact exists
+        run: test -f dist/Adalight-linux-x86_64
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: dist/Adalight-linux-x86_64
+
+  release:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Adalight.exe
+          files: |
+            dist/Adalight.exe
+            dist/Adalight-linux-x86_64
           generate_release_notes: true
