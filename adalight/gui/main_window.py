@@ -19,7 +19,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, QTime, QTimer, QUrl, Signal
+from PySide6.QtCore import QSettings, Qt, QThread, QTime, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QPainter, QPixmap
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import (
@@ -28,10 +28,12 @@ from PySide6.QtWidgets import (
     QColorDialog,
     QComboBox,
     QDoubleSpinBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QMainWindow,
     QMenu,
@@ -62,6 +64,10 @@ from ..config import (
     MUSIC_EFFECTS,
     START_CORNERS,
     Config,
+    delete_profile,
+    list_profiles,
+    load_profile,
+    save_profile,
 )
 from ..device import list_serial_ports
 from ..engine import Engine, Mode
@@ -310,9 +316,19 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._apply_cfg_to_ui(self.cfg)
+        self._refresh_profiles()
         self._build_tray()
         self._loading = False
         self._refresh_preview_layout()
+
+        # восстановление геометрии окна и активной вкладки
+        self._settings = QSettings("xvin84", "Adalight")
+        self.resize(980, 640)
+        geometry = self._settings.value("geometry")
+        if geometry is not None:
+            self.restoreGeometry(geometry)
+        self.tabs.setCurrentIndex(int(self._settings.value("tab", 0)))
+
         QTimer.singleShot(2000, lambda: self._check_updates(silent=True))
 
     # ── построение интерфейса ─────────────────────────────────────────────
@@ -340,10 +356,30 @@ class MainWindow(QMainWindow):
             "Система",
         )
         tabs.setMinimumWidth(400)
+        self.tabs = tabs
         root.addWidget(tabs, 0)
 
-        # правая колонка: предпросмотр и управление
+        # правая колонка: профили, предпросмотр и управление
         right = QVBoxLayout()
+
+        profiles_row = QHBoxLayout()
+        profiles_row.addWidget(QLabel("Профиль:"))
+        self.cb_profile = QComboBox()
+        self.cb_profile.setMinimumWidth(160)
+        self.cb_profile.setToolTip("Выбор профиля сразу применяет его настройки")
+        self.cb_profile.activated.connect(self._on_profile_selected)
+        btn_prof_save = QPushButton("💾 Сохранить как…")
+        btn_prof_save.setToolTip("Сохранить текущие настройки как именованный профиль")
+        btn_prof_save.clicked.connect(self._on_profile_save)
+        btn_prof_del = QPushButton("🗑")
+        btn_prof_del.setFixedWidth(36)
+        btn_prof_del.setToolTip("Удалить выбранный профиль")
+        btn_prof_del.clicked.connect(self._on_profile_delete)
+        profiles_row.addWidget(self.cb_profile, 1)
+        profiles_row.addWidget(btn_prof_save)
+        profiles_row.addWidget(btn_prof_del)
+        right.addLayout(profiles_row)
+
         self.preview = LedPreview()
         right.addWidget(self.preview, 1)
 
@@ -732,6 +768,19 @@ class MainWindow(QMainWindow):
             "Отсечка шума в тенях: сигнал ниже порога гасится в ноль"
         )
         form.addRow("Порог теней:", row)
+
+        # баланс белого: калибровка каналов, чтобы белый на ленте был белым
+        self.sl_wb_r, row = self._slider_row(20, 150)
+        form.addRow("Баланс R:", row)
+        self.sl_wb_g, row = self._slider_row(20, 150)
+        form.addRow("Баланс G:", row)
+        self.sl_wb_b, row = self._slider_row(20, 150)
+        form.addRow("Баланс B:", row)
+        for s in (self.sl_wb_r, self.sl_wb_g, self.sl_wb_b):
+            s.setToolTip(
+                "Множитель канала (1.00 = без изменений). Включите белую «лампу» "
+                "и подстройте, чтобы лента светила чистым белым."
+            )
         return g
 
     # ── вкладка «Яркость» ─────────────────────────────────────────────────
@@ -807,10 +856,117 @@ class MainWindow(QMainWindow):
         self.ch_autostart.toggled.connect(self._on_autostart_toggled)
         lay.addWidget(self.ch_autostart)
 
+        row = QHBoxLayout()
+        btn_export = QPushButton("Экспорт настроек…")
+        btn_export.setToolTip("Сохранить все настройки в JSON-файл")
+        btn_export.clicked.connect(self._on_export)
+        btn_import = QPushButton("Импорт настроек…")
+        btn_import.setToolTip("Загрузить настройки из JSON-файла")
+        btn_import.clicked.connect(self._on_import)
+        row.addWidget(btn_export)
+        row.addWidget(btn_import)
+        lay.addLayout(row)
+
         btn_about = QPushButton("О программе")
         btn_about.clicked.connect(self._show_about)
         lay.addWidget(btn_about)
         return g
+
+    # ── профили и импорт/экспорт ──────────────────────────────────────────
+
+    def _refresh_profiles(self, select: str | None = None) -> None:
+        self.cb_profile.blockSignals(True)
+        self.cb_profile.clear()
+        names = list_profiles()
+        self.cb_profile.addItems(names)
+        if select and select in names:
+            self.cb_profile.setCurrentText(select)
+        else:
+            self.cb_profile.setCurrentIndex(-1)  # ничего не выбрано
+        self.cb_profile.blockSignals(False)
+
+    def _apply_config(self, cfg: Config, source: str) -> None:
+        """Применить готовый Config: в UI, к теме и к работающему движку."""
+        self._loading = True
+        self._apply_cfg_to_ui(cfg)
+        self._loading = False
+        self._refresh_preview_layout()
+        self._sync_lamp_rows()
+        self._sync_music_rows()
+        apply_theme(QApplication.instance(), cfg.theme)
+        if self.thread is not None:
+            self._start_engine(self._selected_mode())
+        self.statusBar().showMessage(f"{source}: настройки применены", 4000)
+
+    def _on_profile_selected(self, index: int) -> None:
+        name = self.cb_profile.itemText(index)
+        if not name:
+            return
+        try:
+            cfg = load_profile(name)
+            cfg.validate()
+        except (ValueError, OSError) as e:
+            QMessageBox.warning(self, "Профиль", f"Не удалось загрузить профиль: {e}")
+            return
+        self._apply_config(cfg, f"Профиль «{name}»")
+
+    def _on_profile_save(self) -> None:
+        name, ok = QInputDialog.getText(
+            self, "Профиль", "Имя профиля:", text=self.cb_profile.currentText()
+        )
+        if not ok or not name.strip():
+            return
+        cfg = self._cfg_from_ui()
+        try:
+            cfg.validate()
+            save_profile(name.strip(), cfg)
+        except (ValueError, OSError) as e:
+            QMessageBox.warning(self, "Профиль", str(e))
+            return
+        self._refresh_profiles(select=name.strip())
+        self.statusBar().showMessage(f"Профиль «{name.strip()}» сохранён", 3000)
+
+    def _on_profile_delete(self) -> None:
+        name = self.cb_profile.currentText()
+        if not name:
+            return
+        answer = QMessageBox.question(
+            self, "Профиль", f"Удалить профиль «{name}»?"
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        delete_profile(name)
+        self._refresh_profiles()
+        self.statusBar().showMessage(f"Профиль «{name}» удалён", 3000)
+
+    def _on_export(self) -> None:
+        cfg = self._cfg_from_ui()
+        try:
+            cfg.validate()
+        except ValueError as e:
+            QMessageBox.warning(self, "Экспорт", str(e))
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Экспорт настроек", "adalight-config.json", "JSON (*.json)"
+        )
+        if not path:
+            return
+        cfg.save(Path(path))
+        self.statusBar().showMessage(f"Настройки экспортированы: {path}", 4000)
+
+    def _on_import(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Импорт настроек", "", "JSON (*.json)"
+        )
+        if not path:
+            return
+        try:
+            cfg = Config.load(Path(path))
+            cfg.validate()
+        except (ValueError, OSError) as e:
+            QMessageBox.warning(self, "Импорт", f"Не удалось загрузить настройки: {e}")
+            return
+        self._apply_config(cfg, "Импорт")
 
     def _group_appearance(self) -> QGroupBox:
         g = QGroupBox("Внешний вид")
@@ -953,6 +1109,10 @@ class MainWindow(QMainWindow):
         act_night.setChecked(self.btn_night.isChecked())
         act_night.toggled.connect(self.btn_night.setChecked)
         self.btn_night.toggled.connect(act_night.setChecked)
+        profiles_menu = QMenu("Профили", menu)
+        profiles_menu.aboutToShow.connect(
+            lambda: self._fill_tray_profiles(profiles_menu)
+        )
         act_about = QAction("О программе", menu)
         act_about.triggered.connect(self._show_about)
         act_quit = QAction("Выход", menu)
@@ -960,6 +1120,7 @@ class MainWindow(QMainWindow):
         menu.addAction(act_show)
         menu.addAction(act_start)
         menu.addAction(act_night)
+        menu.addMenu(profiles_menu)
         menu.addSeparator()
         menu.addAction(act_about)
         menu.addAction(act_quit)
@@ -1002,6 +1163,9 @@ class MainWindow(QMainWindow):
         self.sl_smooth.setValue(round(cfg.smooth * 100))
         self.sl_temp.setValue(cfg.color_temp)
         self.sl_black.setValue(round(cfg.black_threshold * 100))
+        self.sl_wb_r.setValue(round(cfg.wb_r * 100))
+        self.sl_wb_g.setValue(round(cfg.wb_g * 100))
+        self.sl_wb_b.setValue(round(cfg.wb_b * 100))
         self.btn_night.setChecked(cfg.night_mode)
 
         self.cb_theme.setCurrentIndex(_THEMES.index(cfg.theme))
@@ -1060,6 +1224,9 @@ class MainWindow(QMainWindow):
             smooth=self.sl_smooth.value() / 100,
             color_temp=self.sl_temp.value(),
             black_threshold=self.sl_black.value() / 100,
+            wb_r=self.sl_wb_r.value() / 100,
+            wb_g=self.sl_wb_g.value() / 100,
+            wb_b=self.sl_wb_b.value() / 100,
             night_mode=self.btn_night.isChecked(),
             mode=self.cb_mode.currentData(),
             lamp_effect=self.cb_lamp_effect.currentData(),
@@ -1209,6 +1376,7 @@ class MainWindow(QMainWindow):
             smooth=cfg.smooth,
             color_temp=cfg.color_temp,
             black_threshold=cfg.black_threshold,
+            white_balance=(cfg.wb_r, cfg.wb_g, cfg.wb_b),
             night_mode=cfg.night_mode,
             schedule_enabled=cfg.schedule_enabled,
             schedule=cfg.schedule,
@@ -1357,6 +1525,26 @@ class MainWindow(QMainWindow):
         self.cfg = cfg
         self.statusBar().showMessage(f"Сохранено: {path}", 4000)
 
+    def _fill_tray_profiles(self, menu: QMenu) -> None:
+        menu.clear()
+        names = list_profiles()
+        if not names:
+            empty = menu.addAction("(нет профилей)")
+            empty.setEnabled(False)
+            return
+        for name in names:
+            menu.addAction(name, lambda n=name: self._apply_profile_by_name(n))
+
+    def _apply_profile_by_name(self, name: str) -> None:
+        try:
+            cfg = load_profile(name)
+            cfg.validate()
+        except (ValueError, OSError) as e:
+            QMessageBox.warning(self, "Профиль", f"Не удалось загрузить профиль: {e}")
+            return
+        self._refresh_profiles(select=name)
+        self._apply_config(cfg, f"Профиль «{name}»")
+
     def _show_from_tray(self) -> None:
         self.showNormal()
         self.raise_()
@@ -1367,6 +1555,8 @@ class MainWindow(QMainWindow):
         self.close()
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        self._settings.setValue("geometry", self.saveGeometry())
+        self._settings.setValue("tab", self.tabs.currentIndex())
         if self.tray is not None and not self._quitting:
             event.ignore()
             self.hide()
@@ -1405,7 +1595,6 @@ def run(minimized: bool = False) -> int:
 
     apply_theme(app, Config.load().theme)
     win = MainWindow()
-    win.resize(980, 640)
     server.newConnection.connect(win._show_from_tray)
     if minimized and win.tray is not None:
         win.start_minimized()  # подсветка включается, окно остаётся в трее

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
@@ -94,6 +95,10 @@ class Config:
     color_temp: int = 6500        # цветовая температура, K (6500 = нейтрально)
     black_threshold: float = 0.0  # отсечка шума в тенях, доля 0..0.5
     night_mode: bool = False      # теплее, темнее, плавнее
+    # баланс белого: множители каналов поверх температуры (калибровка ленты)
+    wb_r: float = 1.0
+    wb_g: float = 1.0
+    wb_b: float = 1.0
 
     # Режим работы
     mode: str = "capture"  # capture | lamp | music
@@ -181,6 +186,9 @@ class Config:
             raise ValueError("Чувствительность цветомузыки должна быть в диапазоне 0.1..5")
         if self.theme not in ("dark", "light", "system"):
             raise ValueError(f"Неверная тема: {self.theme!r}")
+        for name in ("wb_r", "wb_g", "wb_b"):
+            if not 0.2 <= getattr(self, name) <= 1.5:
+                raise ValueError("Баланс белого: множители должны быть в диапазоне 0.2..1.5")
 
     @classmethod
     def load(cls, path: Path | None = None) -> Config:
@@ -197,3 +205,39 @@ class Config:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(asdict(self), indent=2, ensure_ascii=False), encoding="utf-8")
         return p
+
+
+# ── профили: именованные конфиги в <конфиг-каталог>/profiles/*.json ──────
+
+
+def profiles_dir(base: Path | None = None) -> Path:
+    return (base or default_config_path().parent) / "profiles"
+
+
+def _profile_path(name: str, base: Path | None = None) -> Path:
+    clean = re.sub(r'[\\/:*?"<>|]', "", name).strip()
+    if not clean:
+        raise ValueError(f"Недопустимое имя профиля: {name!r}")
+    return profiles_dir(base) / f"{clean}.json"
+
+
+def list_profiles(base: Path | None = None) -> list[str]:
+    d = profiles_dir(base)
+    if not d.is_dir():
+        return []
+    return sorted(p.stem for p in d.glob("*.json"))
+
+
+def save_profile(name: str, cfg: Config, base: Path | None = None) -> Path:
+    return cfg.save(_profile_path(name, base))
+
+
+def load_profile(name: str, base: Path | None = None) -> Config:
+    p = _profile_path(name, base)
+    if not p.is_file():
+        raise ValueError(f"Профиль «{name}» не найден")
+    return Config.load(p)
+
+
+def delete_profile(name: str, base: Path | None = None) -> None:
+    _profile_path(name, base).unlink(missing_ok=True)

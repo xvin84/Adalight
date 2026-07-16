@@ -73,6 +73,15 @@ def test_process_applies_color_temp():
     assert r > g > b  # тёплый белый
 
 
+def test_process_applies_white_balance():
+    cfg = Config(gamma=1.0, brightness=1.0, saturation=1.0, wb_b=0.5)
+    dev = AdalightDevice(cfg)
+    out = dev.process(np.full((cfg.total_leds, 3), 200.0))
+    r, g, b = out[0].astype(int)
+    assert r == g == 200
+    assert abs(b - 100) <= 1  # синий канал ополовинен
+
+
 def test_process_saturation_keeps_gray():
     cfg = Config(gamma=1.0, brightness=1.0, saturation=2.0)
     dev = AdalightDevice(cfg)

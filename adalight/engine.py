@@ -145,6 +145,7 @@ class Engine:
         adaptive_speed: float | None = None,
         color_temp: int | None = None,
         black_threshold: float | None = None,
+        white_balance: tuple[float, float, float] | None = None,
         night_mode: bool | None = None,
         lamp_effect: str | None = None,
         lamp_color: str | None = None,
@@ -196,7 +197,10 @@ class Engine:
                     self._music[key] = value
                     self._music_dirty = True
             self.device.set_tuning(
-                gamma=gamma, saturation=saturation, black_threshold=black_threshold
+                gamma=gamma,
+                saturation=saturation,
+                black_threshold=black_threshold,
+                white_balance=white_balance,
             )
             self._apply_color_temp()
             self._applied_brightness = None  # форсируем пересчёт итоговой яркости

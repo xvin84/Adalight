@@ -80,6 +80,7 @@ class AdalightDevice:
         self._saturation = cfg.saturation
         self._black_threshold = cfg.black_threshold
         self._temp_rgb = kelvin_to_rgb(cfg.color_temp)
+        self._wb = np.array([cfg.wb_r, cfg.wb_g, cfg.wb_b], dtype=np.float64)
         self._lut = build_gamma_lut(self._gamma, self._brightness, self._black_threshold)
 
     def set_tuning(
@@ -89,6 +90,7 @@ class AdalightDevice:
         saturation: float | None = None,
         color_temp: float | None = None,
         black_threshold: float | None = None,
+        white_balance: tuple[float, float, float] | None = None,
     ) -> None:
         """Смена цветокоррекции на лету — без переоткрытия порта (и без ресета платы)."""
         rebuild = False
@@ -102,6 +104,8 @@ class AdalightDevice:
             self._saturation = saturation
         if color_temp is not None:
             self._temp_rgb = kelvin_to_rgb(color_temp)
+        if white_balance is not None:
+            self._wb = np.array(white_balance, dtype=np.float64)
         if rebuild:
             self._lut = build_gamma_lut(self._gamma, self._brightness, self._black_threshold)
 
@@ -128,7 +132,7 @@ class AdalightDevice:
         if self._saturation != 1.0:
             gray = c.mean(axis=1, keepdims=True)
             c = np.clip(gray + (c - gray) * self._saturation, 0.0, 1.0)
-        c = c * self._temp_rgb  # баланс белого / цветовая температура
+        c = np.clip(c * self._temp_rgb * self._wb, 0.0, 1.0)  # температура + баланс белого
         return self._lut[(c * 255.0).astype(np.uint8)]
 
     def send_raw(self, colors: np.ndarray) -> None:

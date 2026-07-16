@@ -42,6 +42,10 @@ layout, and a tray icon so the lighting keeps running with the window closed.
 - **Windows installer** (`Adalight-Setup.exe`): installs per-user (no admin),
   start-menu/desktop shortcuts and optional autostart.
 - Single-instance: launching the app again just raises the running window.
+- **Settings profiles**: save named presets ("Movie", "Game", "Work") and switch
+  in one click from the window or the tray menu.
+- **White balance**: per-channel R/G/B multipliers to calibrate the strip.
+- **Import/export settings** to a JSON file — backup and transfer between machines.
 - Calibration test modes: color-per-side fill and a running-dot chase.
 - Headless CLI for autostart setups; GUI and CLI share the same JSON config
   (`%APPDATA%\adalight\config.json` on Windows, `~/.config/adalight/` on Linux).
@@ -108,7 +112,7 @@ uv run main.py --list-ports
 
 ## Roadmap
 
-- [ ] **Settings profiles** ("Movie", "Game", "Work") with quick switching from the tray
+- [x] **Settings profiles** ("Movie", "Game", "Work") with quick switching from the tray
 - [ ] **WLED-UDP transport** — ESP strip over Wi-Fi, no wire and no baud-rate cap
 - [ ] **Notification integrations** — a corner color flash: Telegram blue, Discord purple
 - [ ] **More music effects** (bass waves, beat flashes)

@@ -2,7 +2,13 @@ import json
 
 import pytest
 
-from adalight.config import Config
+from adalight.config import (
+    Config,
+    delete_profile,
+    list_profiles,
+    load_profile,
+    save_profile,
+)
 
 
 def test_roundtrip(tmp_path):
@@ -62,8 +68,34 @@ def test_validate_accepts_defaults():
         {"lamp_gradient": [{"pos": 0.0, "color": "#ff0000"}, {"pos": 2.0, "color": "#00ff00"}]},
         {"lamp_gradient": [{"pos": 0.0, "color": "мусор"}, {"pos": 1.0, "color": "#00ff00"}]},
         {"theme": "neon"},
+        {"wb_r": 0.1},
+        {"wb_b": 2.0},
     ],
 )
 def test_validate_rejects_bad_values(kw):
     with pytest.raises(ValueError):
         Config(**kw).validate()
+
+
+def test_profiles_roundtrip(tmp_path):
+    assert list_profiles(tmp_path) == []
+    cfg = Config(brightness=0.42, mode="lamp")
+    save_profile("Кино", cfg, tmp_path)
+    save_profile("Игра", Config(), tmp_path)
+    assert list_profiles(tmp_path) == ["Игра", "Кино"]
+    assert load_profile("Кино", tmp_path) == cfg
+    delete_profile("Кино", tmp_path)
+    assert list_profiles(tmp_path) == ["Игра"]
+    delete_profile("Кино", tmp_path)  # повторное удаление не падает
+
+
+def test_profile_name_sanitized(tmp_path):
+    save_profile('Ки/но: "тест"?', Config(), tmp_path)
+    assert list_profiles(tmp_path) == ["Кино тест"]
+
+
+def test_profile_bad_names(tmp_path):
+    with pytest.raises(ValueError):
+        save_profile("///", Config(), tmp_path)
+    with pytest.raises(ValueError):
+        load_profile("нет такого", tmp_path)
