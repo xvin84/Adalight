@@ -20,22 +20,29 @@ def create_backend(cfg: Config) -> BaseBackend:
     fallback_reason: str | None = None
     if name == "auto":
         if sys.platform == "win32":
-            from .windows import DxcamBackend
+            from .windows import BetterCamBackend, DxcamBackend
 
-            try:
-                return DxcamBackend(cfg)
-            except Exception as e:  # dxcam может упасть чем угодно (comtypes, DXGI)
-                fallback_reason = f"dxcam недоступен: {e}"
-                name = "mss"
+            reasons = []
+            for cls in (BetterCamBackend, DxcamBackend):
+                try:
+                    return cls(cfg)
+                except Exception as e:  # DXGI/ctypes могут падать чем угодно
+                    reasons.append(f"{cls.__name__}: {e}")
+            fallback_reason = "; ".join(reasons)
+            name = "mss"
         elif _is_wayland():
             name = "wfrecorder"
         else:
             name = "mss"
 
-    if name == "dxcam":
+    if name == "bettercam":
+        from .windows import BetterCamBackend
+
+        backend: BaseBackend = BetterCamBackend(cfg)
+    elif name == "dxcam":
         from .windows import DxcamBackend
 
-        backend: BaseBackend = DxcamBackend(cfg)
+        backend = DxcamBackend(cfg)
     elif name == "mss":
         from .mss_backend import MssBackend
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import Qt, QThread, QTimer, Signal
+from PySide6.QtCore import Qt, QThread, QTime, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -30,9 +30,11 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSlider,
     QSpinBox,
+    QStyledItemDelegate,
     QSystemTrayIcon,
     QTableWidget,
     QTableWidgetItem,
+    QTimeEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -42,6 +44,7 @@ from ..capture import list_outputs
 from ..config import BACKENDS, COLOR_ORDERS, DIRECTIONS, START_CORNERS, Config
 from ..device import list_serial_ports
 from ..engine import Engine, Mode
+from ..schedule import parse_time
 from .preview import LedPreview
 
 _CORNER_LABELS = {
@@ -95,6 +98,59 @@ class EngineThread(QThread):
     def set_tuning(self, **kwargs) -> None:
         if self._engine is not None:
             self._engine.set_tuning(**kwargs)
+
+
+class ScheduleDelegate(QStyledItemDelegate):
+    """Жёсткие редакторы ячеек расписания: время только как ЧЧ:ММ, яркость 0..2.
+
+    Произвольный текст ввести невозможно: колонки времени редактируются
+    через QTimeEdit («1816» превращается в «18:16»), яркость — через спинбокс.
+    """
+
+    TIME_COLUMNS = (0, 1)
+
+    def createEditor(self, parent, option, index):  # noqa: N802 (Qt API)
+        if index.column() in self.TIME_COLUMNS:
+            editor = QTimeEdit(parent)
+            editor.setDisplayFormat("HH:mm")
+            return editor
+        editor = QDoubleSpinBox(parent)
+        editor.setRange(0.0, 2.0)
+        editor.setSingleStep(0.05)
+        editor.setDecimals(2)
+        return editor
+
+    def setEditorData(self, editor, index):  # noqa: N802 (Qt API)
+        text = str(index.data() or "")
+        if index.column() in self.TIME_COLUMNS:
+            t = QTime.fromString(text, "HH:mm")
+            editor.setTime(t if t.isValid() else QTime(0, 0))
+        else:
+            try:
+                editor.setValue(float(text.replace(",", ".")))
+            except ValueError:
+                editor.setValue(1.0)
+
+    def setModelData(self, editor, model, index):  # noqa: N802 (Qt API)
+        if index.column() in self.TIME_COLUMNS:
+            model.setData(index, editor.time().toString("HH:mm"))
+        else:
+            model.setData(index, f"{editor.value():.2f}")
+
+
+def _normalize_time_text(text: str) -> str:
+    """«1816» / «8:5» -> «18:16» / «08:05»; нераспознанное оставляем как есть."""
+    try:
+        return parse_time(text).strftime("%H:%M")
+    except ValueError:
+        return text
+
+
+def _normalize_brightness_text(text: str) -> str:
+    try:
+        return f"{float(str(text).replace(',', '.')):.2f}"
+    except ValueError:
+        return text
 
 
 def _make_icon() -> QIcon:
@@ -307,7 +363,7 @@ class MainWindow(QMainWindow):
         self.cb_backend = QComboBox()
         self.cb_backend.addItems(BACKENDS)
         self.cb_backend.setToolTip(
-            "auto: Windows — dxcam (fallback mss), Wayland — wf-recorder, иначе mss.\n"
+            "auto: Windows — bettercam → dxcam → mss, Wayland — wf-recorder, иначе mss.\n"
             "Реально работающий бэкенд показан в статус-баре."
         )
         self.cb_backend.currentIndexChanged.connect(self._on_hard_changed)
@@ -402,6 +458,7 @@ class MainWindow(QMainWindow):
         self.tbl_schedule.setToolTip(
             "Время в формате ЧЧ:ММ, интервалы через полночь (22:00–06:00) поддерживаются"
         )
+        self.tbl_schedule.setItemDelegate(ScheduleDelegate(self.tbl_schedule))
         self.tbl_schedule.itemChanged.connect(self._on_soft_changed)
         lay.addWidget(self.tbl_schedule)
 
@@ -570,7 +627,12 @@ class MainWindow(QMainWindow):
         was_loading, self._loading = self._loading, True
         r = self.tbl_schedule.rowCount()
         self.tbl_schedule.insertRow(r)
-        for col, text in enumerate((start, end, brightness)):
+        texts = (
+            _normalize_time_text(start),
+            _normalize_time_text(end),
+            _normalize_brightness_text(brightness),
+        )
+        for col, text in enumerate(texts):
             self.tbl_schedule.setItem(r, col, QTableWidgetItem(text))
         self._loading = was_loading
 

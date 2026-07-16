@@ -37,8 +37,9 @@ layout, and a tray icon so the lighting keeps running with the window closed.
   for 48 LEDs but only ~13 fps for 300. Raise the baud rate both in the app and
   in your firmware (ESP boards handle 921600, classic Arduino 500000).
 - The status bar shows which capture backend is actually running; on Windows
-  `dxcam` is the fast path, and if it falls back to `mss` the reason is shown.
-  The `mss` backend captures only the edge bands rather than the full screen.
+  the fast path is `bettercam` (a maintained dxcam fork), then `dxcam`, and if
+  both fall back to `mss` the reason is shown. The `mss` backend captures only
+  the edge bands rather than the full screen.
 
 ## Download (Windows)
 

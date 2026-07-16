@@ -10,7 +10,13 @@ def test_parse_time():
     assert parse_time(" 23:05 ") == dtime(23, 5)
 
 
-@pytest.mark.parametrize("bad", ["8", "25:00", "12:60", "ab:cd", "", "1:2:3"])
+def test_parse_time_compact_digits():
+    assert parse_time("1816") == dtime(18, 16)
+    assert parse_time("930") == dtime(9, 30)
+    assert parse_time("0000") == dtime(0, 0)
+
+
+@pytest.mark.parametrize("bad", ["8", "25:00", "12:60", "ab:cd", "", "1:2:3", "2500", "12345"])
 def test_parse_time_rejects(bad):
     with pytest.raises(ValueError):
         parse_time(bad)

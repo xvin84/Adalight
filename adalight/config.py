@@ -13,7 +13,7 @@ from .schedule import parse_rules
 COLOR_ORDERS = ("RGB", "GRB", "BGR", "RBG", "GBR", "BRG")
 START_CORNERS = ("top-left", "top-right", "bottom-left", "bottom-right")
 DIRECTIONS = ("cw", "ccw")
-BACKENDS = ("auto", "dxcam", "mss", "wfrecorder", "grim")
+BACKENDS = ("auto", "bettercam", "dxcam", "mss", "wfrecorder", "grim")
 
 APP_NAME = "adalight"
 

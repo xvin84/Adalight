@@ -4,9 +4,10 @@ requires-python = ">=3.12"
 
 [[package]]
 name = "adalight"
-version = "0.3.0"
+version = "0.3.1"
 source = { editable = "." }
 dependencies = [
+    { name = "bettercam", marker = "sys_platform == 'win32'" },
     { name = "dxcam", marker = "sys_platform == 'win32'" },
     { name = "mss" },
     { name = "numpy" },
@@ -23,6 +24,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "bettercam", marker = "sys_platform == 'win32'", specifier = ">=1.0" },
     { name = "dxcam", marker = "sys_platform == 'win32'", specifier = ">=0.0.5" },
     { name = "mss", specifier = ">=9.0" },
     { name = "numpy", specifier = ">=1.26" },
@@ -44,6 +46,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7e/f8/97fdf103f38fed6792a1601dbc16cc8aac56e7459a9fff08c812d8ae177a/altgraph-0.17.5.tar.gz", hash = "sha256:c87b395dd12fabde9c99573a9749d67da8d29ef9de0125c7f536699b4a9bc9e7", size = 48428, upload-time = "2025-11-21T20:35:50.583Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a9/ba/000a1996d4308bc65120167c21241a3b205464a2e0b58deda26ae8ac21d1/altgraph-0.17.5-py2.py3-none-any.whl", hash = "sha256:f3a22400bce1b0c701683820ac4f3b159cd301acab067c51c653e06961600597", size = 21228, upload-time = "2025-11-21T20:35:49.444Z" },
+]
+
+[[package]]
+name = "bettercam"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "comtypes" },
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/96/27/bf39ca1caaaac0aedfdc77929608b316cce2bab7fc6f5f2643e3c107793b/bettercam-1.0.0.tar.gz", hash = "sha256:122cc0e905cb40be8f2a26e46ee587bae40c10eb9c23201370a54e68b84a0940", size = 19269, upload-time = "2023-11-22T08:25:15.705Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3c/66/c16181c6e036e60f41161ea31f78d4ffe76babbdad1e82499226e55bfecf/bettercam-1.0.0-py3-none-any.whl", hash = "sha256:0690b2289683725d875eb877db13a8c628935816866ef8ec0751945e988f32ac", size = 21029, upload-time = "2023-11-22T08:25:13.676Z" },
 ]
 
 [[package]]

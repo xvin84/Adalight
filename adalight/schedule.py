@@ -14,8 +14,12 @@ class ScheduleRule:
 
 
 def parse_time(value: str) -> dtime:
-    """'HH:MM' -> datetime.time; бросает ValueError на мусор."""
-    parts = value.strip().split(":")
+    """'HH:MM' -> datetime.time; '1816' и '930' тоже понимаются (18:16, 9:30).
+    Бросает ValueError на мусор."""
+    s = value.strip()
+    if ":" not in s and s.isdigit() and len(s) in (3, 4):
+        s = f"{s[:-2]}:{s[-2:]}"
+    parts = s.split(":")
     if len(parts) != 2:
         raise ValueError(f"Ожидается время в формате ЧЧ:ММ, получено {value!r}")
     return dtime(int(parts[0]), int(parts[1]))
