@@ -42,8 +42,9 @@ layout, and a tray icon so the lighting keeps running with the window closed.
 - **Windows installer** (`Adalight-Setup.exe`): installs per-user (no admin),
   start-menu/desktop shortcuts and optional autostart.
 - Single-instance: launching the app again just raises the running window.
-- **Settings profiles**: save named presets ("Movie", "Game", "Work") and switch
-  in one click from the window or the tray menu.
+- **Settings profiles**: built-in presets 🎬 Movie / 🎮 Game / 💼 Work (layered
+  on top of your hardware settings) plus your own saved profiles; one-click
+  switching from the window or the tray menu.
 - **White balance**: per-channel R/G/B multipliers to calibrate the strip.
 - **Import/export settings** to a JSON file — backup and transfer between machines.
 - Calibration test modes: color-per-side fill and a running-dot chase.

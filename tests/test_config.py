@@ -3,7 +3,9 @@ import json
 import pytest
 
 from adalight.config import (
+    PRESET_PROFILES,
     Config,
+    apply_preset,
     delete_profile,
     list_profiles,
     load_profile,
@@ -92,6 +94,28 @@ def test_profiles_roundtrip(tmp_path):
 def test_profile_name_sanitized(tmp_path):
     save_profile('Ки/но: "тест"?', Config(), tmp_path)
     assert list_profiles(tmp_path) == ["Кино тест"]
+
+
+def test_presets_valid_and_keep_hardware():
+    base = Config(port="COM9", leds_top=33, baud=500000, output="1")
+    for name in PRESET_PROFILES:
+        cfg = apply_preset(base, name)
+        cfg.validate()
+        assert cfg.port == "COM9"
+        assert cfg.leds_top == 33
+        assert cfg.baud == 500000
+        assert cfg.output == "1"
+
+
+def test_preset_changes_experience():
+    cfg = apply_preset(Config(), "Работа")
+    assert cfg.brightness == 0.5
+    assert cfg.adaptive_enabled is True
+
+
+def test_unknown_preset_rejected():
+    with pytest.raises(ValueError):
+        apply_preset(Config(), "Дискотека")
 
 
 def test_profile_bad_names(tmp_path):

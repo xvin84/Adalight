@@ -62,8 +62,10 @@ from ..config import (
     LAMP_EFFECTS,
     MODES,
     MUSIC_EFFECTS,
+    PRESET_PROFILES,
     START_CORNERS,
     Config,
+    apply_preset,
     delete_profile,
     list_profiles,
     load_profile,
@@ -104,16 +106,20 @@ _BOOT_RETRY_DELAY_MS = 10_000
 _INSTANCE_KEY = "adalight-single-instance"
 
 _BTN_START_QSS = (
-    "QPushButton {background: #2e7d46; color: white; font-weight: 600; padding: 7px;}"
+    "QPushButton {background: #2e7d46; color: white; font-weight: 600;"
+    " padding: 7px; border: none; border-radius: 6px;}"
     "QPushButton:hover {background: #379554;}"
+    "QPushButton:pressed {background: #27693b;}"
 )
 _BTN_STOP_QSS = (
-    "QPushButton {background: #8b2e2e; color: white; font-weight: 600; padding: 7px;}"
+    "QPushButton {background: #8b2e2e; color: white; font-weight: 600;"
+    " padding: 7px; border: none; border-radius: 6px;}"
     "QPushButton:hover {background: #a63a3a;}"
+    "QPushButton:pressed {background: #772727;}"
 )
 _BTN_UPDATE_QSS = (
     "QPushButton {background: #b8860b; color: white; font-weight: 600;"
-    " padding: 3px 10px; border-radius: 4px;}"
+    " padding: 3px 10px; border: none; border-radius: 6px;}"
     "QPushButton:hover {background: #d09c1d;}"
 )
 
@@ -458,6 +464,7 @@ class MainWindow(QMainWindow):
         host = QWidget()
         lay = QVBoxLayout(host)
         lay.setContentsMargins(4, 8, 8, 8)
+        lay.setSpacing(12)
         for w in widgets:
             lay.addWidget(w)
         lay.addStretch(1)
@@ -480,6 +487,7 @@ class MainWindow(QMainWindow):
         box = QWidget()
         lay = QVBoxLayout(box)
         lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(12)
 
         g = QGroupBox("Источник")
         form = QFormLayout(g)
@@ -874,16 +882,26 @@ class MainWindow(QMainWindow):
 
     # ── профили и импорт/экспорт ──────────────────────────────────────────
 
-    def _refresh_profiles(self, select: str | None = None) -> None:
+    def _refresh_profiles(self, select: tuple[str, str] | None = None) -> None:
+        """Наполняет комбо: встроенные пресеты, разделитель, профили пользователя."""
         self.cb_profile.blockSignals(True)
         self.cb_profile.clear()
-        names = list_profiles()
-        self.cb_profile.addItems(names)
-        if select and select in names:
-            self.cb_profile.setCurrentText(select)
-        else:
-            self.cb_profile.setCurrentIndex(-1)  # ничего не выбрано
+        for name, spec in PRESET_PROFILES.items():
+            self.cb_profile.addItem(f"{spec['icon']} {name}", ("preset", name))
+        users = list_profiles()
+        if users:
+            self.cb_profile.insertSeparator(self.cb_profile.count())
+            for name in users:
+                self.cb_profile.addItem(f"👤 {name}", ("user", name))
+        self.cb_profile.setCurrentIndex(self._find_profile_index(select) if select else -1)
         self.cb_profile.blockSignals(False)
+
+    def _find_profile_index(self, data: tuple[str, str]) -> int:
+        # QComboBox.findData не сравнивает python-кортежи — ищем вручную
+        for i in range(self.cb_profile.count()):
+            if self.cb_profile.itemData(i) == data:
+                return i
+        return -1
 
     def _apply_config(self, cfg: Config, source: str) -> None:
         """Применить готовый Config: в UI, к теме и к работающему движку."""
@@ -899,36 +917,53 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"{source}: настройки применены", 4000)
 
     def _on_profile_selected(self, index: int) -> None:
-        name = self.cb_profile.itemText(index)
-        if not name:
-            return
+        data = self.cb_profile.itemData(index)
+        if data:
+            self._select_profile(*data)
+
+    def _select_profile(self, kind: str, name: str) -> None:
         try:
-            cfg = load_profile(name)
+            if kind == "preset":
+                # пресет накладывается поверх текущих настроек: железо не трогаем
+                cfg = apply_preset(self._cfg_from_ui(), name)
+            else:
+                cfg = load_profile(name)
             cfg.validate()
         except (ValueError, OSError) as e:
-            QMessageBox.warning(self, "Профиль", f"Не удалось загрузить профиль: {e}")
+            QMessageBox.warning(self, "Профиль", f"Не удалось применить профиль: {e}")
             return
+        self._refresh_profiles(select=(kind, name))
         self._apply_config(cfg, f"Профиль «{name}»")
 
     def _on_profile_save(self) -> None:
-        name, ok = QInputDialog.getText(
-            self, "Профиль", "Имя профиля:", text=self.cb_profile.currentText()
-        )
+        name, ok = QInputDialog.getText(self, "Профиль", "Имя профиля:")
         if not ok or not name.strip():
+            return
+        name = name.strip()
+        if name in PRESET_PROFILES:
+            QMessageBox.warning(
+                self, "Профиль", f"«{name}» — встроенный пресет, выберите другое имя."
+            )
             return
         cfg = self._cfg_from_ui()
         try:
             cfg.validate()
-            save_profile(name.strip(), cfg)
+            save_profile(name, cfg)
         except (ValueError, OSError) as e:
             QMessageBox.warning(self, "Профиль", str(e))
             return
-        self._refresh_profiles(select=name.strip())
-        self.statusBar().showMessage(f"Профиль «{name.strip()}» сохранён", 3000)
+        self._refresh_profiles(select=("user", name))
+        self.statusBar().showMessage(f"Профиль «{name}» сохранён", 3000)
 
     def _on_profile_delete(self) -> None:
-        name = self.cb_profile.currentText()
-        if not name:
+        data = self.cb_profile.currentData()
+        if not data:
+            return
+        kind, name = data
+        if kind == "preset":
+            QMessageBox.information(
+                self, "Профиль", "Встроенные пресеты удалить нельзя."
+            )
             return
         answer = QMessageBox.question(
             self, "Профиль", f"Удалить профиль «{name}»?"
@@ -1527,23 +1562,16 @@ class MainWindow(QMainWindow):
 
     def _fill_tray_profiles(self, menu: QMenu) -> None:
         menu.clear()
-        names = list_profiles()
-        if not names:
-            empty = menu.addAction("(нет профилей)")
-            empty.setEnabled(False)
-            return
-        for name in names:
-            menu.addAction(name, lambda n=name: self._apply_profile_by_name(n))
-
-    def _apply_profile_by_name(self, name: str) -> None:
-        try:
-            cfg = load_profile(name)
-            cfg.validate()
-        except (ValueError, OSError) as e:
-            QMessageBox.warning(self, "Профиль", f"Не удалось загрузить профиль: {e}")
-            return
-        self._refresh_profiles(select=name)
-        self._apply_config(cfg, f"Профиль «{name}»")
+        for name, spec in PRESET_PROFILES.items():
+            menu.addAction(
+                f"{spec['icon']} {name}",
+                lambda n=name: self._select_profile("preset", n),
+            )
+        users = list_profiles()
+        if users:
+            menu.addSeparator()
+        for name in users:
+            menu.addAction(f"👤 {name}", lambda n=name: self._select_profile("user", n))
 
     def _show_from_tray(self) -> None:
         self.showNormal()

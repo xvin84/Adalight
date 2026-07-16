@@ -6,7 +6,7 @@ import json
 import os
 import re
 import sys
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 
 from .schedule import parse_rules
@@ -205,6 +205,46 @@ class Config:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(asdict(self), indent=2, ensure_ascii=False), encoding="utf-8")
         return p
+
+
+# ── встроенные пресеты: накладываются поверх текущих настроек, не трогая
+#    железо (порт, диоды, геометрию, монитор) ──────────────────────────────
+
+PRESET_PROFILES: dict[str, dict] = {
+    "Кино": {
+        "icon": "🎬",
+        "overrides": dict(
+            mode="capture", brightness=0.85, gamma=2.4, saturation=1.30,
+            smooth=0.65, color_temp=5800, black_threshold=0.06,
+            adaptive_enabled=True, adaptive_min=0.25, adaptive_max=1.0,
+            adaptive_speed=0.03, night_mode=False,
+        ),
+    },
+    "Игра": {
+        "icon": "🎮",
+        "overrides": dict(
+            mode="capture", brightness=1.0, gamma=2.0, saturation=1.15,
+            smooth=0.10, color_temp=6500, black_threshold=0.03,
+            adaptive_enabled=False, night_mode=False,
+        ),
+    },
+    "Работа": {
+        "icon": "💼",
+        "overrides": dict(
+            mode="capture", brightness=0.5, gamma=2.2, saturation=0.9,
+            smooth=0.8, color_temp=5000, black_threshold=0.05,
+            adaptive_enabled=True, adaptive_min=0.3, adaptive_max=0.8,
+            adaptive_speed=0.02, night_mode=False,
+        ),
+    },
+}
+
+
+def apply_preset(cfg: Config, name: str) -> Config:
+    """Пресет поверх текущего конфига: железо остаётся, «ощущения» меняются."""
+    if name not in PRESET_PROFILES:
+        raise ValueError(f"Неизвестный пресет: {name!r}")
+    return replace(cfg, **PRESET_PROFILES[name]["overrides"])
 
 
 # ── профили: именованные конфиги в <конфиг-каталог>/profiles/*.json ──────

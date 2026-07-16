@@ -1,6 +1,6 @@
 [project]
 name = "adalight"
-version = "0.6.0"
+version = "0.7.0"
 description = "Screen-edge ambilight for LED strips over the Adalight serial protocol: Windows (DXGI) and Linux/Wayland capture, PySide6 GUI"
 readme = "README.md"
 license = "MIT"
