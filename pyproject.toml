@@ -1,0 +1,43 @@
+[project]
+name = "adalight"
+version = "0.2.0"
+description = "Adalight ambilight: захват экрана и управление LED-лентой (Windows + Linux/Wayland), GUI на PySide6"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=1.26",
+    "pyserial>=3.5",
+    "PySide6>=6.6",
+    "mss>=9.0",
+    "dxcam>=0.0.5; sys_platform == 'win32'",
+]
+
+[project.scripts]
+adalight = "adalight.cli:main"
+
+[project.gui-scripts]
+adalight-gui = "adalight.gui:run"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+    "pyinstaller>=6.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["adalight"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
