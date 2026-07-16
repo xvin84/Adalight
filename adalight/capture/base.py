@@ -12,10 +12,20 @@ class CaptureError(RuntimeError):
 
 
 class BaseBackend(ABC):
-    """Отдаёт кадры RGB (H, W, 3) uint8. width/height известны после конструктора."""
+    """Отдаёт кадры RGB (H, W, 3) uint8. width/height известны после конструктора.
+
+    Если supports_bands=True, бэкенд умеет захватывать только краевые полосы
+    через get_bands() — это сильно дешевле полного кадра.
+    """
 
     width: int
     height: int
+    supports_bands: bool = False
+    fallback_reason: str | None = None  # чем не устроил основной бэкенд (режим auto)
+
+    def get_bands(self, rects: dict[str, tuple[int, int, int, int]]) -> dict[str, np.ndarray]:
+        """Захват полос {side: (left, top, width, height)} -> {side: RGB-массив}."""
+        raise NotImplementedError
 
     @abstractmethod
     def get_frame(self) -> np.ndarray | None:

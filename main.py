@@ -1,20 +1,22 @@
 """Точка входа Adalight.
 
-Без аргументов запускается GUI; любые аргументы уходят в CLI
-(--live, --sides, --chase, --off, --list-monitors, --list-ports, ...).
+Без аргументов запускается GUI; --minimized запускает GUI свёрнутым в трей
+с включённой подсветкой (используется автозапуском). Остальные аргументы
+уходят в CLI (--live, --sides, --chase, --off, --list-monitors, ...).
 """
 
 import sys
 
 
 def main() -> int:
-    if len(sys.argv) > 1:
-        from adalight.cli import main as cli_main
+    args = sys.argv[1:]
+    if not args or args == ["--minimized"]:
+        from adalight.gui import run
 
-        return cli_main()
-    from adalight.gui import run
+        return run(minimized=bool(args))
+    from adalight.cli import main as cli_main
 
-    return run()
+    return cli_main()
 
 
 if __name__ == "__main__":

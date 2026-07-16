@@ -39,7 +39,27 @@ class AdalightDevice:
         self.ser: serial.Serial | None = None
         self._header = build_header(cfg.total_leds)
         self._order = color_order_indices(cfg.color_order)
-        self._lut = build_gamma_lut(cfg.gamma, cfg.brightness)
+        self._gamma = cfg.gamma
+        self._brightness = cfg.brightness
+        self._saturation = cfg.saturation
+        self._lut = build_gamma_lut(self._gamma, self._brightness)
+
+    def set_tuning(
+        self,
+        gamma: float | None = None,
+        brightness: float | None = None,
+        saturation: float | None = None,
+    ) -> None:
+        """Смена цветокоррекции на лету — без переоткрытия порта (и без ресета платы)."""
+        rebuild = False
+        if gamma is not None and gamma != self._gamma:
+            self._gamma, rebuild = gamma, True
+        if brightness is not None and brightness != self._brightness:
+            self._brightness, rebuild = brightness, True
+        if saturation is not None:
+            self._saturation = saturation
+        if rebuild:
+            self._lut = build_gamma_lut(self._gamma, self._brightness)
 
     def connect(self) -> None:
         try:
@@ -61,9 +81,9 @@ class AdalightDevice:
     def process(self, colors: np.ndarray) -> np.ndarray:
         """Цветокоррекция: насыщенность + гамма/яркость (через LUT). Вход и выход — RGB."""
         c = np.clip(colors, 0.0, 255.0) / 255.0
-        if self.cfg.saturation != 1.0:
+        if self._saturation != 1.0:
             gray = c.mean(axis=1, keepdims=True)
-            c = np.clip(gray + (c - gray) * self.cfg.saturation, 0.0, 1.0)
+            c = np.clip(gray + (c - gray) * self._saturation, 0.0, 1.0)
         return self._lut[(c * 255.0).astype(np.uint8)]
 
     def send_raw(self, colors: np.ndarray) -> None:

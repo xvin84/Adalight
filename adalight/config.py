@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import os
 import sys
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
+
+from .schedule import parse_rules
 
 COLOR_ORDERS = ("RGB", "GRB", "BGR", "RBG", "GBR", "BRG")
 START_CORNERS = ("top-left", "top-right", "bottom-left", "bottom-right")
@@ -64,6 +66,16 @@ class Config:
     brightness: float = 1.0
     saturation: float = 1.15
 
+    # Расписание яркости: [{"start": "08:00", "end": "20:00", "brightness": 0.9}, ...]
+    schedule_enabled: bool = False
+    schedule: list = field(default_factory=list)
+
+    # Адаптивная яркость по средней яркости изображения
+    adaptive_enabled: bool = False
+    adaptive_min: float = 0.3
+    adaptive_max: float = 1.0
+    adaptive_speed: float = 0.05  # доля пути до цели за кадр (0..1]
+
     @property
     def total_leds(self) -> int:
         return self.leds_top + self.leds_right + self.leds_bottom + self.leds_left
@@ -91,6 +103,12 @@ class Config:
             raise ValueError("band_size/window_size должны быть в диапазоне (0, 0.5]")
         if self.gamma <= 0 or self.brightness < 0 or self.saturation < 0:
             raise ValueError("Неверные параметры цветокоррекции")
+        if self.schedule_enabled:
+            parse_rules(self.schedule)  # бросает ValueError с номером строки
+        if not 0.0 <= self.adaptive_min <= self.adaptive_max <= 2.0:
+            raise ValueError("Адаптивная яркость: нужно 0 <= мин <= макс <= 2")
+        if not 0.0 < self.adaptive_speed <= 1.0:
+            raise ValueError("Адаптивная яркость: скорость должна быть в диапазоне (0, 1]")
 
     @classmethod
     def load(cls, path: Path | None = None) -> Config:

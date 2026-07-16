@@ -17,9 +17,28 @@ layout, and a tray icon so the lighting keeps running with the window closed.
   WS2812 strips usually expect GRB.
 - LED counts per side, start corner, strip direction (cw/ccw), X/Y mirroring.
 - Monitor selection, target FPS, gamma / brightness / saturation / smoothing.
+- **Live settings**: image parameters, schedule and adaptive brightness apply
+  instantly without restarting (and without resetting the board); layout/port
+  changes auto-apply 5 seconds after the last edit.
+- **Brightness schedule**: time ranges with their own brightness
+  (e.g. 08:00–20:00 → 0.9, 20:00–00:00 → 0.5), overnight ranges supported,
+  the default brightness applies outside all ranges.
+- **Adaptive brightness**: dims the strip on dark scenes and ramps it up on
+  bright ones, with min/max bounds and reaction speed.
+- **Autostart**: launch on login minimized to tray with lighting on
+  (Windows registry / XDG autostart).
 - Calibration test modes: color-per-side fill and a running-dot chase.
 - Headless CLI for autostart setups; GUI and CLI share the same JSON config
   (`%APPDATA%\adalight\config.json` on Windows, `~/.config/adalight/` on Linux).
+
+## If FPS is low
+
+- **Baud rate is a hard cap**: at 115200 the wire fits ~11.5 KB/s, i.e. ~76 fps
+  for 48 LEDs but only ~13 fps for 300. Raise the baud rate both in the app and
+  in your firmware (ESP boards handle 921600, classic Arduino 500000).
+- The status bar shows which capture backend is actually running; on Windows
+  `dxcam` is the fast path, and if it falls back to `mss` the reason is shown.
+  The `mss` backend captures only the edge bands rather than the full screen.
 
 ## Download (Windows)
 

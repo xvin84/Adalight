@@ -6,7 +6,16 @@ from adalight.config import Config
 
 
 def test_roundtrip(tmp_path):
-    cfg = Config(port="COM7", leds_top=20, color_order="GRB", smooth=0.5)
+    cfg = Config(
+        port="COM7",
+        leds_top=20,
+        color_order="GRB",
+        smooth=0.5,
+        schedule_enabled=True,
+        schedule=[{"start": "08:00", "end": "20:00", "brightness": 0.9}],
+        adaptive_enabled=True,
+        adaptive_min=0.25,
+    )
     p = cfg.save(tmp_path / "config.json")
     loaded = Config.load(p)
     assert loaded == cfg
@@ -39,6 +48,9 @@ def test_validate_accepts_defaults():
         {"target_fps": 0},
         {"band_size": 0.0},
         {"backend": "opengl"},
+        {"schedule_enabled": True, "schedule": [{"start": "8", "end": "9", "brightness": 1}]},
+        {"adaptive_min": 0.9, "adaptive_max": 0.2},
+        {"adaptive_speed": 0.0},
     ],
 )
 def test_validate_rejects_bad_values(kw):

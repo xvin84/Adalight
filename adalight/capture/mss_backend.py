@@ -9,6 +9,8 @@ from .base import BaseBackend, CaptureError
 
 
 class MssBackend(BaseBackend):
+    supports_bands = True
+
     def __init__(self, cfg: Config):
         try:
             import mss
@@ -37,7 +39,23 @@ class MssBackend(BaseBackend):
         self.height, self.width = first.shape[:2]
 
     def get_frame(self) -> np.ndarray | None:
-        img = self._sct.grab(self._mon)
+        return self._grab_rect(self._mon)
+
+    def get_bands(self, rects: dict[str, tuple[int, int, int, int]]) -> dict[str, np.ndarray]:
+        out = {}
+        for side, (left, top, width, height) in rects.items():
+            out[side] = self._grab_rect(
+                {
+                    "left": self._mon["left"] + left,
+                    "top": self._mon["top"] + top,
+                    "width": width,
+                    "height": height,
+                }
+            )
+        return out
+
+    def _grab_rect(self, rect: dict) -> np.ndarray:
+        img = self._sct.grab(rect)
         # BGRA -> RGB
         return np.frombuffer(img.bgra, np.uint8).reshape((img.height, img.width, 4))[..., 2::-1]
 

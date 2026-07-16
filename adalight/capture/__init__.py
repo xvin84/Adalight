@@ -17,13 +17,15 @@ def _is_wayland() -> bool:
 
 def create_backend(cfg: Config) -> BaseBackend:
     name = cfg.backend
+    fallback_reason: str | None = None
     if name == "auto":
         if sys.platform == "win32":
             from .windows import DxcamBackend
 
             try:
                 return DxcamBackend(cfg)
-            except CaptureError:
+            except Exception as e:  # dxcam может упасть чем угодно (comtypes, DXGI)
+                fallback_reason = f"dxcam недоступен: {e}"
                 name = "mss"
         elif _is_wayland():
             name = "wfrecorder"
@@ -33,20 +35,24 @@ def create_backend(cfg: Config) -> BaseBackend:
     if name == "dxcam":
         from .windows import DxcamBackend
 
-        return DxcamBackend(cfg)
-    if name == "mss":
+        backend: BaseBackend = DxcamBackend(cfg)
+    elif name == "mss":
         from .mss_backend import MssBackend
 
-        return MssBackend(cfg)
-    if name == "wfrecorder":
+        backend = MssBackend(cfg)
+    elif name == "wfrecorder":
         from .wayland import WfRecorderBackend
 
-        return WfRecorderBackend(cfg)
-    if name == "grim":
+        backend = WfRecorderBackend(cfg)
+    elif name == "grim":
         from .wayland import GrimBackend
 
-        return GrimBackend(cfg)
-    raise CaptureError(f"Неизвестный бэкенд захвата: {name!r}")
+        backend = GrimBackend(cfg)
+    else:
+        raise CaptureError(f"Неизвестный бэкенд захвата: {name!r}")
+
+    backend.fallback_reason = fallback_reason
+    return backend
 
 
 def list_outputs() -> list[tuple[str, str]]:
