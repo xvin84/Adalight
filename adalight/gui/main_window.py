@@ -495,14 +495,15 @@ class MainWindow(QMainWindow):
         self.ds_band.setRange(0.02, 0.5)
         self.ds_band.setSingleStep(0.01)
         self.ds_band.setToolTip("Толщина краевой полосы, доля экрана")
-        self.ds_band.valueChanged.connect(self._on_hard_changed)
+        # влияет на зоны сбора цвета — обновляем и предпросмотр
+        self.ds_band.valueChanged.connect(self._on_geometry_changed)
         form.addRow("Полоса захвата:", self.ds_band)
 
         self.ds_window = QDoubleSpinBox()
         self.ds_window.setRange(0.01, 0.5)
         self.ds_window.setSingleStep(0.01)
         self.ds_window.setToolTip("Ширина окна одного диода, доля экрана")
-        self.ds_window.valueChanged.connect(self._on_hard_changed)
+        self.ds_window.valueChanged.connect(self._on_geometry_changed)
         form.addRow("Окно диода:", self.ds_window)
         return g
 
