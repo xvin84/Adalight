@@ -15,7 +15,7 @@ START_CORNERS = ("top-left", "top-right", "bottom-left", "bottom-right")
 DIRECTIONS = ("cw", "ccw")
 BACKENDS = ("auto", "bettercam", "dxcam", "mss", "wfrecorder", "grim")
 MODES = ("capture", "lamp", "music")
-LAMP_EFFECTS = ("solid", "gradient", "rainbow", "breathing")
+LAMP_EFFECTS = ("solid", "gradient", "rainbow", "rainbow_static", "breathing")
 MUSIC_EFFECTS = ("spectrum", "pulse")
 
 APP_NAME = "adalight"
@@ -99,15 +99,26 @@ class Config:
     mode: str = "capture"  # capture | lamp | music
 
     # Лампа
-    lamp_effect: str = "solid"  # solid | gradient | rainbow | breathing
+    lamp_effect: str = "solid"  # solid | gradient | rainbow | rainbow_static | breathing
     lamp_color: str = "#ff9329"
-    lamp_color2: str = "#2962ff"
     lamp_speed: float = 0.5  # 0..1
+    # градиент: произвольные точки «позиция вдоль ленты -> цвет»
+    lamp_gradient: list = field(
+        default_factory=lambda: [
+            {"pos": 0.0, "color": "#ff9329"},
+            {"pos": 1.0, "color": "#2962ff"},
+        ]
+    )
 
     # Цветомузыка
     music_effect: str = "spectrum"  # spectrum | pulse
     music_color: str = "#ff2d95"
     music_gain: float = 1.0  # 0.1..5
+
+    # Внешний вид
+    theme: str = "dark"          # dark | light | system
+    preview_screen: bool = True  # показывать картинку экрана в предпросмотре
+    preview_zones: bool = True   # показывать зоны сбора цвета
 
     @property
     def total_leds(self) -> int:
@@ -152,12 +163,24 @@ class Config:
             raise ValueError(f"Неверный эффект лампы: {self.lamp_effect!r}")
         if self.music_effect not in MUSIC_EFFECTS:
             raise ValueError(f"Неверный эффект цветомузыки: {self.music_effect!r}")
-        for name in ("lamp_color", "lamp_color2", "music_color"):
+        for name in ("lamp_color", "music_color"):
             parse_hex_color(getattr(self, name))  # бросает ValueError
         if not 0.0 <= self.lamp_speed <= 1.0:
             raise ValueError("Скорость эффекта лампы должна быть в диапазоне 0..1")
+        if len(self.lamp_gradient) < 2:
+            raise ValueError("Градиенту нужно минимум две цветовые точки")
+        for i, stop in enumerate(self.lamp_gradient, start=1):
+            try:
+                pos = float(stop["pos"])
+                parse_hex_color(stop["color"])
+            except (KeyError, TypeError, ValueError) as e:
+                raise ValueError(f"Точка градиента {i}: {e}") from e
+            if not 0.0 <= pos <= 1.0:
+                raise ValueError(f"Точка градиента {i}: позиция должна быть 0..1")
         if not 0.1 <= self.music_gain <= 5.0:
             raise ValueError("Чувствительность цветомузыки должна быть в диапазоне 0.1..5")
+        if self.theme not in ("dark", "light", "system"):
+            raise ValueError(f"Неверная тема: {self.theme!r}")
 
     @classmethod
     def load(cls, path: Path | None = None) -> Config:

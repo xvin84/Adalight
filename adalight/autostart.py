@@ -40,6 +40,39 @@ def is_enabled() -> bool:
     return _desktop_path().is_file()
 
 
+def current_command() -> str | None:
+    """Команда, прописанная в автозапуске сейчас (None, если автозапуск выключен)."""
+    if sys.platform == "win32":
+        import winreg
+
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY) as key:
+                value, _ = winreg.QueryValueEx(key, APP_NAME)
+            return str(value)
+        except OSError:
+            return None
+    p = _desktop_path()
+    if not p.is_file():
+        return None
+    for line in p.read_text(encoding="utf-8").splitlines():
+        if line.startswith("Exec="):
+            return line[len("Exec="):]
+    return None
+
+
+def refresh_if_stale() -> bool:
+    """Чинит автозапуск, если бинарник переехал (частая причина «не запустилось»).
+
+    Возвращает True, если запись была обновлена.
+    """
+    if not is_supported() or not is_enabled():
+        return False
+    if current_command() == launch_command():
+        return False
+    enable()
+    return True
+
+
 def enable() -> None:
     if sys.platform == "win32":
         import winreg

@@ -9,7 +9,10 @@ def lamp_cfg(**kw) -> dict:
     base = {
         "lamp_effect": "solid",
         "lamp_color": "#ff9329",
-        "lamp_color2": "#2962ff",
+        "lamp_gradient": [
+            {"pos": 0.0, "color": "#ff9329"},
+            {"pos": 1.0, "color": "#2962ff"},
+        ],
         "lamp_speed": 0.5,
     }
     base.update(kw)
@@ -37,6 +40,26 @@ def test_gradient_endpoints():
     out = render_lamp(lamp_cfg(lamp_effect="gradient"), 5, t=0.0)
     assert np.allclose(out[0], (255, 147, 41))
     assert np.allclose(out[-1], (41, 98, 255))
+
+
+def test_gradient_multi_stop_positions():
+    grad = [
+        {"pos": 0.0, "color": "#000000"},
+        {"pos": 0.5, "color": "#ff0000"},
+        {"pos": 1.0, "color": "#000000"},
+    ]
+    out = render_lamp(lamp_cfg(lamp_effect="gradient", lamp_gradient=grad), 11, t=0.0)
+    assert np.allclose(out[5], (255, 0, 0))   # середина — чистый красный
+    assert np.allclose(out[0], (0, 0, 0))
+    assert np.allclose(out[-1], (0, 0, 0))
+    assert out[2, 0] > 0                      # между точками — интерполяция
+
+
+def test_rainbow_static_is_frozen():
+    a = render_lamp(lamp_cfg(lamp_effect="rainbow_static"), 20, t=0.0)
+    b = render_lamp(lamp_cfg(lamp_effect="rainbow_static"), 20, t=10.0)
+    assert np.array_equal(a, b)  # статичная радуга не двигается
+    assert not np.allclose(a[0], a[10])  # но оттенки вдоль ленты разные
 
 
 def test_rainbow_range_and_motion():

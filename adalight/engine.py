@@ -64,12 +64,16 @@ def localize_slice(side: str, slc: Slice, width: int, height: int, bw: int, bh: 
 
 
 class Engine:
+    PREVIEW_INTERVAL_S = 0.3
+    PREVIEW_HEIGHT = 180
+
     def __init__(
         self,
         cfg: Config,
         on_colors: Callable[[np.ndarray], None] | None = None,
         on_fps: Callable[[float], None] | None = None,
         on_backend: Callable[[str], None] | None = None,
+        on_frame: Callable[[np.ndarray], None] | None = None,
         backend_factory: Callable[[Config], object] = create_backend,
     ):
         cfg.validate()
@@ -79,6 +83,8 @@ class Engine:
         self._on_colors = on_colors
         self._on_fps = on_fps
         self._on_backend = on_backend
+        self._on_frame = on_frame
+        self._preview_frames = cfg.preview_screen
         self._backend_factory = backend_factory
         self._stop = threading.Event()
         self._lock = threading.Lock()
@@ -100,7 +106,7 @@ class Engine:
         self._lamp = {
             "lamp_effect": cfg.lamp_effect,
             "lamp_color": cfg.lamp_color,
-            "lamp_color2": cfg.lamp_color2,
+            "lamp_gradient": cfg.lamp_gradient,
             "lamp_speed": cfg.lamp_speed,
         }
         self._music = {
@@ -142,11 +148,12 @@ class Engine:
         night_mode: bool | None = None,
         lamp_effect: str | None = None,
         lamp_color: str | None = None,
-        lamp_color2: str | None = None,
+        lamp_gradient: list[dict] | None = None,
         lamp_speed: float | None = None,
         music_effect: str | None = None,
         music_color: str | None = None,
         music_gain: float | None = None,
+        preview_screen: bool | None = None,
     ) -> None:
         """Применение «мягких» настроек на лету. schedule — сырой список из конфига."""
         with self._lock:
@@ -170,10 +177,12 @@ class Engine:
                 self._color_temp = color_temp
             if night_mode is not None:
                 self._night = night_mode
+            if preview_screen is not None:
+                self._preview_frames = preview_screen
             for key, value in (
                 ("lamp_effect", lamp_effect),
                 ("lamp_color", lamp_color),
-                ("lamp_color2", lamp_color2),
+                ("lamp_gradient", lamp_gradient),
                 ("lamp_speed", lamp_speed),
             ):
                 if value is not None:
@@ -265,11 +274,13 @@ class Engine:
             raw = np.empty((n, 3))
             frame_time = 1.0 / self.cfg.target_fps
             fps_t0, fps_n = time.monotonic(), 0
+            preview_t = 0.0
 
             while not self._stop.is_set():
                 t0 = time.monotonic()
 
                 got_frame = False
+                img = None
                 if use_bands:
                     bands = backend.get_bands(rects)
                     for i, (y1, y2, x1, x2) in enumerate(local):
@@ -283,6 +294,19 @@ class Engine:
                             reg = img[y1:y2, x1:x2]
                             raw[i] = reg.mean(axis=(0, 1)) if reg.size else 0.0
                         got_frame = True
+
+                # уменьшенный кадр для предпросмотра экрана в GUI
+                if (
+                    self._on_frame is not None
+                    and self._preview_frames
+                    and t0 - preview_t >= self.PREVIEW_INTERVAL_S
+                ):
+                    if img is None and use_bands:
+                        img = backend.get_frame()
+                    if img is not None:
+                        step = max(1, img.shape[0] // self.PREVIEW_HEIGHT)
+                        self._on_frame(np.ascontiguousarray(img[::step, ::step]))
+                        preview_t = t0
 
                 if got_frame:
                     self._apply_brightness(raw)

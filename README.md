@@ -35,7 +35,13 @@ layout, and a tray icon so the lighting keeps running with the window closed.
   and smoother — on top of your current settings.
 - **Color pipeline**: color temperature (white balance) and a shadow noise
   cut-off so dark scenes don't make the LEDs glow with noise.
-- **Update check**: the app checks GitHub Releases and offers the new version.
+- **Auto-update**: the app checks GitHub Releases, downloads the new binary and
+  restarts itself — no manual downloading.
+- **Tabbed UI with live screen preview**: the preview pane shows the captured
+  screen with the exact color-sampling zones overlaid; dark / light / system theme.
+- **Windows installer** (`Adalight-Setup.exe`): installs per-user (no admin),
+  start-menu/desktop shortcuts and optional autostart.
+- Single-instance: launching the app again just raises the running window.
 - Calibration test modes: color-per-side fill and a running-dot chase.
 - Headless CLI for autostart setups; GUI and CLI share the same JSON config
   (`%APPDATA%\adalight\config.json` on Windows, `~/.config/adalight/` on Linux).
@@ -55,7 +61,7 @@ layout, and a tray icon so the lighting keeps running with the window closed.
 Grab a binary from the [latest release](https://github.com/xvin84/Adalight/releases) —
 no Python required:
 
-- **Windows**: `Adalight.exe`
+- **Windows**: `Adalight-Setup.exe` (installer, recommended) or portable `Adalight.exe`
 - **Linux**: `Adalight-linux-x86_64` (then `chmod +x Adalight-linux-x86_64`;
   Wayland capture additionally needs `wf-recorder` installed)
 

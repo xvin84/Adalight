@@ -39,7 +39,7 @@ def hsv_strip(hues: np.ndarray, value: np.ndarray | float = 1.0) -> np.ndarray:
 
 
 def render_lamp(cfg_like: dict, n: int, t: float) -> np.ndarray:
-    """Кадр лампы: effect/color/color2/speed из dict'а (см. Engine), t — секунды."""
+    """Кадр лампы: effect/color/gradient/speed из dict'а (см. Engine), t — секунды."""
     effect = cfg_like["lamp_effect"]
     color = np.array(parse_hex_color(cfg_like["lamp_color"]), dtype=np.float64)
     speed = float(cfg_like["lamp_speed"])
@@ -48,14 +48,20 @@ def render_lamp(cfg_like: dict, n: int, t: float) -> np.ndarray:
         return np.tile(color, (n, 1))
 
     if effect == "gradient":
-        color2 = np.array(parse_hex_color(cfg_like["lamp_color2"]), dtype=np.float64)
-        k = np.linspace(0.0, 1.0, max(n, 2))[:, None]
-        return color * (1.0 - k) + color2 * k
+        stops = sorted(cfg_like["lamp_gradient"], key=lambda s: float(s["pos"]))
+        pos = np.array([float(s["pos"]) for s in stops])
+        cols = np.array([parse_hex_color(s["color"]) for s in stops], dtype=np.float64)
+        x = np.linspace(0.0, 1.0, max(n, 2))
+        return np.stack([np.interp(x, pos, cols[:, c]) for c in range(3)], axis=1)
 
     if effect == "rainbow":
-        # оттенок вдоль ленты, медленно вращается со скоростью speed
+        # бегущая радуга: оттенки вдоль ленты вращаются по периметру
         hues = np.arange(n) / max(n, 1) + t * speed * 0.2
         return hsv_strip(hues)
+
+    if effect == "rainbow_static":
+        # статичная радуга: неподвижное распределение оттенков вдоль ленты
+        return hsv_strip(np.arange(n) / max(n, 1))
 
     if effect == "breathing":
         # плавное «дыхание» 0.12..1.0; speed=1 -> цикл ~2 с, speed→0 -> очень медленно
@@ -82,9 +88,14 @@ class MusicRenderer:
         self._smoothed = np.zeros(n_leds)
 
     def _agc(self, values: np.ndarray) -> np.ndarray:
-        """Нормировка на медленно затухающий пик; gain подкручивает чувствительность."""
+        """Нормировка на медленно затухающий пик; gain подкручивает чувствительность.
+
+        Степень 0.45 — перцептивное сжатие: тихие полосы заметно подтягиваются
+        (0.1 -> 0.35), иначе всё, что тише пика, выглядит почти чёрным.
+        """
         self._peak = max(self._peak * 0.995, float(values.max()), 1e-6)
-        return np.clip(values / self._peak * self.gain, 0.0, 1.0)
+        norm = np.clip(values / self._peak, 0.0, 1.0)
+        return np.clip(np.power(norm, 0.45) * self.gain, 0.0, 1.0)
 
     def render(self, samples: np.ndarray, samplerate: int) -> np.ndarray:
         if self.effect == "pulse":

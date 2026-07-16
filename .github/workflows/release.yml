@@ -38,19 +38,29 @@ jobs:
         run: >
           uv run pyinstaller --noconfirm --onefile --windowed
           --name Adalight
+          --icon assets/icon.ico
+          --add-data "assets/icon.png;assets"
           --collect-submodules comtypes
           --collect-all soundcard
           main.py
 
-      - name: Smoke check artifact exists
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $version = python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=$version installer.iss
+
+      - name: Smoke check artifacts exist
         shell: bash
-        run: test -f dist/Adalight.exe
+        run: test -f dist/Adalight.exe && test -f dist/Adalight-Setup.exe
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: dist/Adalight.exe
+          path: |
+            dist/Adalight.exe
+            dist/Adalight-Setup.exe
 
   build-linux:
     runs-on: ubuntu-latest
@@ -75,6 +85,7 @@ jobs:
         run: >
           uv run pyinstaller --noconfirm --onefile
           --name Adalight-linux-x86_64
+          --add-data "assets/icon.png:assets"
           --collect-all soundcard
           main.py
 
@@ -101,6 +112,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
+            dist/Adalight-Setup.exe
             dist/Adalight.exe
             dist/Adalight-linux-x86_64
           generate_release_notes: true

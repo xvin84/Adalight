@@ -58,6 +58,10 @@ def test_validate_accepts_defaults():
         {"music_gain": 0.0},
         {"color_temp": 500},
         {"black_threshold": 0.9},
+        {"lamp_gradient": [{"pos": 0.0, "color": "#ff0000"}]},
+        {"lamp_gradient": [{"pos": 0.0, "color": "#ff0000"}, {"pos": 2.0, "color": "#00ff00"}]},
+        {"lamp_gradient": [{"pos": 0.0, "color": "мусор"}, {"pos": 1.0, "color": "#00ff00"}]},
+        {"theme": "neon"},
     ],
 )
 def test_validate_rejects_bad_values(kw):
