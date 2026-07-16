@@ -94,6 +94,32 @@ uv run main.py --list-ports
 3. **“Test: chase”** runs a single bright dot along the strip to verify the
    exact LED order; the first LED is marked with a ring in the preview.
 
+## Tech map
+
+| Layer | Module | What it does |
+|---|---|---|
+| Capture | `capture/` | Windows: bettercam → dxcam (DXGI, `grab()` polling), mss fallback; Wayland: wf-recorder / grim; mss grabs edge bands only |
+| Geometry | `geometry.py` | LED layout around the perimeter, color-sampling zones |
+| Engine | `engine.py` | Capture→process→send loop (Qt-free); live/lamp/music/test modes; schedule, adaptive and night brightness; live settings |
+| Effects | `effects.py`, `audio.py` | Lamp (solid/gradient/rainbows/breathing), music (FFT + AGC over loopback audio via soundcard) |
+| Device | `device.py` | Adalight protocol, channel order, LUT gamma, color temperature, shadow cut-off |
+| GUI | `gui/` | PySide6: tabs, live preview with zones, tray, themes, auto-update |
+| Infra | `updates.py`, `autostart.py`, CI | GitHub Releases (auto-update), autostart (registry/XDG), exe+installer+linux binary built on `v*` tags |
+
+## Roadmap
+
+- [ ] **Settings profiles** ("Movie", "Game", "Work") with quick switching from the tray
+- [ ] **WLED-UDP transport** — ESP strip over Wi-Fi, no wire and no baud-rate cap
+- [ ] **Notification integrations** — a corner color flash: Telegram blue, Discord purple
+- [ ] **More music effects** (bass waves, beat flashes)
+- [ ] **Multi-monitor** — independent strip segments across screens
+- [ ] **Plugin system** — custom effects and integrations without rebuilding
+- [ ] **xdg-desktop-portal / PipeWire capture** — GNOME and KDE support on Wayland
+- [ ] **English UI localization**
+- [ ] **macOS build** (a tester with a Mac is welcome)
+
+Got an idea? [Open an issue](https://github.com/xvin84/Adalight/issues).
+
 ## How it works
 
 - Header `"Ada" + count_hi + count_lo + (hi^lo^0x55)`, then 3 bytes per LED —
