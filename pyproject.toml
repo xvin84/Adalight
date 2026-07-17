@@ -1,6 +1,6 @@
 [project]
 name = "adalight"
-version = "0.10.0"
+version = "0.11.0"
 description = "Screen-edge ambilight for LED strips over the Adalight serial protocol: Windows (DXGI) and Linux/Wayland capture, PySide6 GUI"
 readme = "README.md"
 license = "MIT"
@@ -17,6 +17,7 @@ dependencies = [
     "winrt-Windows.Foundation>=2.0; sys_platform == 'win32'",
     "winrt-Windows.Foundation.Collections>=2.0; sys_platform == 'win32'",
     "winrt-Windows.ApplicationModel>=2.0; sys_platform == 'win32'",
+    "winrt-Windows.Storage.Streams>=2.0; sys_platform == 'win32'",
     "winrt-Windows.UI.Notifications>=2.0; sys_platform == 'win32'",
     "winrt-Windows.UI.Notifications.Management>=2.0; sys_platform == 'win32'",
 ]

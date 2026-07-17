@@ -93,6 +93,26 @@ def create_plugin():
   программу, но и работать перестанет молча.
 - Не трогайте Qt из потоков плагина — только методы `api`.
 
+## Публикация в каталоге
+
+Каталог на вкладке «Плагины» читает файл
+[`plugins-index.json`](../plugins-index.json) из основного репозитория.
+Чтобы опубликовать свой плагин — пришлите pull request, добавив запись:
+
+```json
+{
+  "name": "my_plugin",
+  "title": "Мой плагин",
+  "description": "Что он делает",
+  "author": "ваш-ник",
+  "kind": "community",
+  "version": "1.0",
+  "url": "https://raw.githubusercontent.com/.../my_plugin.py"
+}
+```
+
+`kind: official` зарезервирован за плагинами из этого репозитория.
+
 ## Пример
 
 Готовый рабочий пример — [`examples/plugins/break_reminder.py`](../examples/plugins/break_reminder.py):

@@ -1,0 +1,13 @@
+{
+  "plugins": [
+    {
+      "name": "break_reminder",
+      "title": "Напоминание о перерыве",
+      "description": "Каждые N минут лента мягко вспыхивает зелёным по центру экрана — время встать и размяться.",
+      "author": "xvin84",
+      "kind": "official",
+      "version": "1.0",
+      "url": "https://raw.githubusercontent.com/xvin84/Adalight/main/examples/plugins/break_reminder.py"
+    }
+  ]
+}

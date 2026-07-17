@@ -1,3 +1,9 @@
+import json
+
+import numpy as np
+import pytest
+
+from adalight.plugins import catalog
 from adalight.plugins.base import PluginAPI
 from adalight.plugins.builtin.notifications import (
     DEFAULT_SETTINGS,
@@ -131,3 +137,90 @@ def test_manager_isolates_broken_plugin():
     loaded = manager.get("broken")
     assert loaded.error == "бум"
     assert loaded.running is False
+
+
+# ── цвет от иконки ────────────────────────────────────────────────────────
+
+
+def test_icon_accent_color_boosts_saturation():
+    from adalight.plugins.builtin.notifications import icon_accent_color
+
+    # тускло-синеватая иконка -> сочный синий акцент
+    pixels = np.tile(np.array([[60, 70, 110, 255]]), (100, 1))
+    color = icon_accent_color(pixels)
+    r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
+    assert b > r and b > g       # оттенок сохранён
+    assert b >= 220              # яркость подтянута
+    assert (b - min(r, g)) > 80  # насыщенность подтянута
+
+
+def test_icon_accent_color_ignores_transparent():
+    from adalight.plugins.builtin.notifications import icon_accent_color
+
+    pixels = np.array([[255, 0, 0, 0]] * 50 + [[0, 255, 0, 255]] * 5)
+    color = icon_accent_color(pixels)
+    assert int(color[3:5], 16) > 200  # прозрачный красный не учтён, взят зелёный
+    assert icon_accent_color(np.array([[255, 0, 0, 0]])) is None
+
+
+# ── каталог ───────────────────────────────────────────────────────────────
+
+
+def make_entry(**kw) -> catalog.CatalogEntry:
+    base = dict(
+        name="demo", title="Демо", description="тест", kind="official",
+        url="https://example.invalid/demo.py",
+    )
+    base.update(kw)
+    return catalog.CatalogEntry(**base)
+
+
+def test_parse_index_roundtrip():
+    data = {
+        "plugins": [
+            {"name": "a", "title": "A", "description": "d", "kind": "official",
+             "url": "https://x/a.py", "author": "me", "version": "1.0"},
+            {"name": "b", "title": "B", "description": "d", "kind": "community",
+             "url": "https://x/b.py"},
+        ]
+    }
+    entries = catalog.parse_index(data)
+    assert [e.name for e in entries] == ["a", "b"]
+    assert entries[0].author == "me"
+    assert entries[1].kind == "community"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        {"title": "без name", "description": "d", "kind": "official", "url": "u"},
+        {"name": "x", "title": "t", "description": "d", "kind": "vip", "url": "u"},
+    ],
+)
+def test_parse_index_rejects(raw):
+    with pytest.raises(ValueError):
+        catalog.parse_index({"plugins": [raw]})
+
+
+def test_repo_index_matches_schema():
+    """plugins-index.json в корне репозитория обязан быть валидным."""
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parent.parent / "plugins-index.json"
+    entries = catalog.parse_index(json.loads(path.read_text(encoding="utf-8")))
+    assert any(e.name == "break_reminder" and e.kind == "official" for e in entries)
+
+
+def test_install_writes_plugin(tmp_path):
+    entry = make_entry()
+    payload = b"def create_plugin():\n    return None\n"
+    target = catalog.install(entry, base=tmp_path, fetcher=lambda url: payload)
+    assert target.read_bytes() == payload
+    assert catalog.is_installed("demo", tmp_path)
+    assert not catalog.is_installed("other", tmp_path)
+
+
+def test_install_rejects_non_plugin(tmp_path):
+    with pytest.raises(ValueError):
+        catalog.install(make_entry(), base=tmp_path, fetcher=lambda url: b"print('hi')")
+    assert not catalog.is_installed("demo", tmp_path)

@@ -99,6 +99,7 @@ from ..engine import Engine, Mode
 from ..plugins import PluginAPI, PluginManager
 from ..schedule import parse_time
 from .anim import fade_in, fade_out_and_delete, make_pulse, slide_fade_in
+from .flash_picker import FlashPositionPicker
 from .gradient import GradientEditor
 from .icons import icon
 from .preview import LedPreview
@@ -249,6 +250,21 @@ class UpdateDownloadThread(QThread):
 
     def _on_progress(self, done: int, total: int) -> None:
         self.progress.emit(int(done * 100 / total) if total else -1)
+
+
+class CatalogFetchThread(QThread):
+    """Фоновая загрузка каталога плагинов."""
+
+    result = Signal(object)
+    failed = Signal(str)
+
+    def run(self) -> None:
+        from ..plugins import catalog
+
+        try:
+            self.result.emit(catalog.fetch_catalog())
+        except Exception as e:  # noqa: BLE001 — сеть/формат: показываем пользователю
+            self.failed.emit(str(e))
 
 
 class ScheduleDelegate(QStyledItemDelegate):
@@ -439,7 +455,9 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(self._make_tab(self._group_connection(), self._group_leds()))
         self.pages.addWidget(self._make_tab(self._group_image()))
         self.pages.addWidget(self._make_tab(self._group_adaptive(), self._group_schedule()))
-        self.pages.addWidget(self._make_tab(*self._plugin_groups()))
+        self.pages.addWidget(
+            self._make_tab(*self._plugin_groups(), self._group_catalog())
+        )
         self.pages.addWidget(
             self._make_tab(
                 self._group_appearance(), self._group_system(), self._group_updates()
@@ -1378,6 +1396,92 @@ class MainWindow(QMainWindow):
             groups.append(g)
         return groups
 
+    def _group_catalog(self) -> QGroupBox:
+        g = QGroupBox("Каталог плагинов")
+        lay = QVBoxLayout(g)
+        hint = QLabel(
+            "Официальные плагины и плагины сообщества из репозитория проекта. "
+            "Плагин — это код, который выполняется на вашем компьютере: "
+            "ставьте только то, чему доверяете."
+        )
+        hint.setWordWrap(True)
+        lay.addWidget(hint)
+        self.btn_catalog = QPushButton("Загрузить каталог")
+        self.btn_catalog.setIcon(icon("refresh"))
+        self.btn_catalog.clicked.connect(self._load_catalog)
+        lay.addWidget(self.btn_catalog)
+        self._catalog_host = QVBoxLayout()
+        lay.addLayout(self._catalog_host)
+        return g
+
+    def _load_catalog(self) -> None:
+        self.btn_catalog.setEnabled(False)
+        self.btn_catalog.setText("Загружаю…")
+        self._catalog_thread = CatalogFetchThread(self)
+        self._catalog_thread.result.connect(self._on_catalog_loaded)
+        self._catalog_thread.failed.connect(self._on_catalog_failed)
+        self._catalog_thread.start()
+
+    def _on_catalog_failed(self, message: str) -> None:
+        self.btn_catalog.setEnabled(True)
+        self.btn_catalog.setText("Загрузить каталог")
+        self._toast(f"Каталог недоступен: {message}")
+
+    def _on_catalog_loaded(self, entries: list) -> None:
+        from ..plugins import catalog as cat
+
+        self.btn_catalog.setEnabled(True)
+        self.btn_catalog.setText("Обновить каталог")
+        while self._catalog_host.count():
+            item = self._catalog_host.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        if not entries:
+            self._catalog_host.addWidget(QLabel("Каталог пока пуст."))
+            return
+        kind_label = {"official": "официальный", "community": "сообщество"}
+        for entry in entries:
+            row = QHBoxLayout()
+            author = f" · {entry.author}" if entry.author else ""
+            text = QLabel(
+                f"<b>{entry.title}</b> ({kind_label[entry.kind]}{author})<br>"
+                f"{entry.description}"
+            )
+            text.setWordWrap(True)
+            installed = cat.is_installed(entry.name)
+            btn = QPushButton("Обновить" if installed else "Установить")
+            btn.setFixedWidth(110)
+            btn.clicked.connect(
+                lambda _=False, e=entry, b=btn: self._install_catalog_entry(e, b)
+            )
+            row.addWidget(text, 1)
+            row.addWidget(btn)
+            self._catalog_host.addLayout(row)
+
+    def _install_catalog_entry(self, entry, btn: QPushButton) -> None:
+        from ..plugins import catalog as cat
+
+        if entry.kind == "community":
+            answer = QMessageBox.question(
+                self,
+                "Плагин сообщества",
+                f"«{entry.title}» создан сообществом, а не автором Adalight.\n"
+                "Плагин — это код, который будет выполняться на вашем компьютере.\n"
+                "Установить?",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        try:
+            cat.install(entry)
+        except (OSError, ValueError) as e:
+            QMessageBox.warning(self, "Каталог", f"Не удалось установить: {e}")
+            return
+        btn.setText("Обновить")
+        self._toast(
+            f"«{entry.title}» установлен — перезапустите программу, "
+            "чтобы плагин появился в списке"
+        )
+
     def _open_plugins_dir(self) -> None:
         from ..plugins.manager import plugins_dir
 
@@ -1388,14 +1492,17 @@ class MainWindow(QMainWindow):
     def _notifications_settings(self) -> QFormLayout:
         form = QFormLayout()
 
-        self.sl_flash_x, row = self._plugin_slider_row(0, 100)
-        self.sl_flash_x.setToolTip("Где по горизонтали: 0 — левый край, 1 — правый")
-        form.addRow("Позиция X:", row)
-        self.sl_flash_y, row = self._plugin_slider_row(0, 100)
-        self.sl_flash_y.setToolTip("Где по вертикали: 0 — верх, 1 — низ")
-        form.addRow("Позиция Y:", row)
+        # позиция задаётся перетаскиванием пятна по схеме экрана
+        self.flash_picker = FlashPositionPicker()
+        self.flash_picker.changed.connect(self._on_plugins_changed)
+        self.flash_picker.released.connect(self._on_flash_test_if_running)
+        form.addRow("Позиция:", self.flash_picker)
+
         self.sl_flash_radius, row = self._plugin_slider_row(5, 60)
         self.sl_flash_radius.setToolTip("Размер пятна вспышки")
+        self.sl_flash_radius.valueChanged.connect(
+            lambda v: self.flash_picker.set_radius(v / 100)
+        )
         form.addRow("Радиус:", row)
 
         self.btn_flash_telegram = self._color_button("#4fc3f7")
@@ -1403,11 +1510,24 @@ class MainWindow(QMainWindow):
         self.btn_flash_discord = self._color_button("#7c4dff")
         form.addRow("Discord:", self.btn_flash_discord)
 
+        self.ch_flash_any = QCheckBox("Любые приложения — цвет от иконки")
+        self.ch_flash_any.setToolTip(
+            "Вспыхивать на уведомления всех приложений: цвет берётся из иконки "
+            "приложения (Telegram и Discord сохраняют свои цвета)."
+        )
+        self.ch_flash_any.toggled.connect(self._on_plugins_changed)
+        form.addRow(self.ch_flash_any)
+
         btn_test = QPushButton("Тест вспышки")
         btn_test.setToolTip("Показать вспышку на ленте (подсветка должна работать)")
         btn_test.clicked.connect(self._on_flash_test)
         form.addRow(btn_test)
         return form
+
+    def _on_flash_test_if_running(self) -> None:
+        """После перетаскивания пятна — сразу показать вспышку, если лента работает."""
+        if self.thread is not None and self._mode in _MAIN_MODES:
+            self._on_flash_test()
 
     def _plugin_slider_row(self, lo: int, hi: int) -> tuple[QSlider, QHBoxLayout]:
         s = QSlider(Qt.Orientation.Horizontal)
@@ -1427,12 +1547,14 @@ class MainWindow(QMainWindow):
             entry = dict(out.get(name, {}))
             entry["enabled"] = check.isChecked()
             if name == "notifications":
+                x, y = self.flash_picker.values()
                 entry.update(
-                    x=self.sl_flash_x.value() / 100,
-                    y=self.sl_flash_y.value() / 100,
+                    x=x,
+                    y=y,
                     radius=self.sl_flash_radius.value() / 100,
                     telegram_color=self.btn_flash_telegram.property("color_value"),
                     discord_color=self.btn_flash_discord.property("color_value"),
+                    any_app=self.ch_flash_any.isChecked(),
                 )
             out[name] = entry
         return out
@@ -1447,10 +1569,11 @@ class MainWindow(QMainWindow):
         if self.thread is None or self._mode not in _MAIN_MODES:
             self._toast("Запустите подсветку, чтобы увидеть вспышку")
             return
+        x, y = self.flash_picker.values()
         self.thread.add_overlay(
             self.btn_flash_telegram.property("color_value"),
-            self.sl_flash_x.value() / 100,
-            self.sl_flash_y.value() / 100,
+            x,
+            y,
             self.sl_flash_radius.value() / 100,
         )
 
@@ -1699,11 +1822,13 @@ class MainWindow(QMainWindow):
         notif = {**self.plugin_manager_defaults(), **cfg.plugins.get("notifications", {})}
         for name, check in self._plugin_checks.items():
             check.setChecked(bool(cfg.plugins.get(name, {}).get("enabled", False)))
-        self.sl_flash_x.setValue(round(float(notif["x"]) * 100))
-        self.sl_flash_y.setValue(round(float(notif["y"]) * 100))
+        self.flash_picker.set_values(
+            float(notif["x"]), float(notif["y"]), float(notif["radius"])
+        )
         self.sl_flash_radius.setValue(round(float(notif["radius"]) * 100))
         self._set_button_color(self.btn_flash_telegram, notif["telegram_color"])
         self._set_button_color(self.btn_flash_discord, notif["discord_color"])
+        self.ch_flash_any.setChecked(bool(notif.get("any_app", False)))
 
         self.sp_top.setValue(cfg.leds_top)
         self.sp_right.setValue(cfg.leds_right)

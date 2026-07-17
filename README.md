@@ -47,8 +47,11 @@ layout, and a tray icon so the lighting keeps running with the window closed.
   Docs and a template: [docs/PLUGINS.md](docs/PLUGINS.md) (ru),
   [examples/plugins/break_reminder.py](examples/plugins/break_reminder.py).
 - **Notification flashes** (built-in plugin): Telegram — a blue flash,
-  Discord — purple, at any point of the perimeter, over any mode.
-  Windows requires notification-access permission.
+  Discord — purple; the "any app" mode colors the flash from the sending
+  app's icon. Position is set by dragging a spot on a screen diagram, works
+  over any mode. Windows requires notification-access permission.
+- **Plugin catalog**: official and community plugins — one-click install from
+  the Plugins tab (with a third-party-code warning).
 - **WLED transport (beta)**: an ESP strip running WLED over Wi-Fi
   (UDP DRGB/DNRGB, port 21324) — no wire, no baud-rate cap.
 - **Modern UI**: sidebar navigation with SVG icons, a status card
