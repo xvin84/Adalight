@@ -19,7 +19,17 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QSize, Qt, QThread, QTime, QTimer, QUrl, Signal
+from PySide6.QtCore import (
+    QPoint,
+    QSettings,
+    QSize,
+    Qt,
+    QThread,
+    QTime,
+    QTimer,
+    QUrl,
+    Signal,
+)
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -86,6 +96,7 @@ from ..config import (
 from ..device import list_serial_ports
 from ..engine import Engine, Mode
 from ..schedule import parse_time
+from .anim import fade_in, fade_out_and_delete, make_pulse, slide_fade_in
 from .gradient import GradientEditor
 from .icons import icon
 from .preview import LedPreview
@@ -404,7 +415,7 @@ class MainWindow(QMainWindow):
         )
         self.pages.setMinimumWidth(340)
         self.pages.setMaximumWidth(430)
-        self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
+        self.nav.currentRowChanged.connect(self._on_nav_changed)
         self.nav.setCurrentRow(0)
 
         root.addWidget(self.nav, 0)
@@ -463,6 +474,8 @@ class MainWindow(QMainWindow):
         hero_lay.addWidget(self.btn_start)
         right.addWidget(hero)
         self._set_hero_dot("#6a6d73")
+        # пульсация индикатора, пока подсветка работает
+        self._dot_pulse = make_pulse(self.lbl_hero_dot)
 
         self.preview = LedPreview()
         self.preview.ledClicked.connect(self._on_led_clicked)
@@ -565,12 +578,19 @@ class MainWindow(QMainWindow):
         toast = QLabel(message, self)
         toast.setObjectName("toast")
         toast.adjustSize()
-        toast.move(
+        end = QPoint(
             self.width() - toast.width() - 24, self.height() - toast.height() - 44
         )
         toast.show()
         toast.raise_()
-        QTimer.singleShot(2600, toast.deleteLater)
+        slide_fade_in(toast, end)
+        QTimer.singleShot(2400, lambda: fade_out_and_delete(toast))
+
+    def _on_nav_changed(self, index: int) -> None:
+        if self.pages.currentIndex() == index:
+            return
+        self.pages.setCurrentIndex(index)
+        fade_in(self.pages.currentWidget())
 
     @staticmethod
     def _make_tab(*widgets: QWidget) -> QScrollArea:
@@ -621,9 +641,14 @@ class MainWindow(QMainWindow):
         self.mode_stack.addWidget(self._group_capture())
         self.mode_stack.addWidget(self._group_lamp())
         self.mode_stack.addWidget(self._group_music())
-        self.cb_mode.currentIndexChanged.connect(self.mode_stack.setCurrentIndex)
+        self.cb_mode.currentIndexChanged.connect(self._on_mode_page_changed)
         lay.addWidget(self.mode_stack)
         return box
+
+    def _on_mode_page_changed(self, index: int) -> None:
+        self.mode_stack.setCurrentIndex(index)
+        if not self._loading:
+            fade_in(self.mode_stack.currentWidget())
 
     def _group_capture(self) -> QGroupBox:
         g = QGroupBox("Захват экрана")
@@ -1690,6 +1715,7 @@ class MainWindow(QMainWindow):
         self._fps_text = ""
         self.lbl_hero_sub.setText("Запуск…")
         self._set_hero_dot("#2ecc71")
+        self._dot_pulse.start()
         if mode in _MAIN_MODES and self.isHidden():
             self._notify("Подсветка включена", f"Режим: {names[mode]}")
         self.btn_start.setText("■ Стоп")
@@ -1721,6 +1747,10 @@ class MainWindow(QMainWindow):
         self.lbl_state.setText("Остановлено")
         self.lbl_hero_sub.setText("Нажмите «Старт», чтобы включить подсветку")
         self._set_hero_dot("#6a6d73")
+        self._dot_pulse.stop()
+        effect = self.lbl_hero_dot.graphicsEffect()
+        if effect is not None:
+            effect.setProperty("opacity", 1.0)
         self._backend_info = ""
         self._fps_text = ""
         self.btn_start.setText("▶ Старт")
