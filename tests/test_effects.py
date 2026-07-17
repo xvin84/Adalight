@@ -156,6 +156,34 @@ def test_fire_without_points_does_not_crash():
     assert out.shape == (8, 3)
 
 
+def test_comet_moves_with_tail():
+    cfg = lamp_cfg(lamp_effect="comet", lamp_speed=1.0)
+    a = render_lamp(cfg, 30, t=0.0)
+    b = render_lamp(cfg, 30, t=0.5)
+    assert not np.allclose(a, b)             # комета бежит
+    bright = a.max(axis=1)
+    assert bright.max() > 200                # голова яркая
+    assert (bright < 20).sum() > 10          # большая часть ленты тёмная
+
+
+def test_aurora_bounds_and_motion():
+    cfg = lamp_cfg(lamp_effect="aurora", lamp_speed=0.5)
+    a = render_lamp(cfg, 24, t=0.0)
+    b = render_lamp(cfg, 24, t=2.0)
+    assert a.min() >= 0.0 and a.max() <= 255.0
+    assert not np.allclose(a, b)             # сияние переливается
+    assert not np.allclose(a[0], a[12])      # оттенки вдоль ленты разные
+
+
+def test_starry_twinkles_over_dark_sky():
+    cfg = lamp_cfg(lamp_effect="starry", lamp_speed=1.0)
+    frames = [render_lamp(cfg, 40, t) for t in np.linspace(0.0, 4.0, 16)]
+    assert not np.allclose(frames[0], frames[8])  # звёзды мерцают
+    avg = np.mean(frames, axis=0)
+    assert np.median(avg.max(axis=1)) < 90        # фон в основном тёмный
+    assert max(f.max() for f in frames) > 180     # но вспышки яркие
+
+
 def make_tone(freq: float, samplerate: int = 48000, n: int = 1024) -> np.ndarray:
     t = np.arange(n) / samplerate
     return np.sin(2 * np.pi * freq * t)
@@ -180,6 +208,37 @@ def test_music_spectrum_bass_lights_strip_start():
     head = out[:3].max()   # начало ленты — низкие частоты
     tail = out[-3:].max()  # конец — высокие
     assert head > tail
+
+
+def test_music_wave_travels_outward():
+    r = MusicRenderer("wave", "#ffffff", gain=1.0, n_leds=21)
+    for _ in range(3):
+        r.render(make_tone(60.0), 48000)     # бас рождает волну в центре
+
+    def dist_of_peak(out: np.ndarray) -> int:
+        return abs(int(out.max(axis=1).argmax()) - 10)  # расстояние пика от центра
+
+    for _ in range(3):
+        a = r.render(np.zeros(1024), 48000)
+    for _ in range(6):
+        b = r.render(np.zeros(1024), 48000)
+    assert a.max() > 200 and b.max() > 200   # волна жива
+    assert dist_of_peak(b) > dist_of_peak(a)  # и убегает от центра к краям
+
+
+def test_music_beat_flashes_on_kick():
+    r = MusicRenderer("beat", "#ff0000", gain=1.0, n_leds=8)
+    # долгий тихий фон: скользящая средняя привыкает, стартовая вспышка затухает
+    for _ in range(50):
+        r.render(make_tone(60.0, n=1024) * 0.05, 48000)
+    quiet = r.render(make_tone(60.0, n=1024) * 0.05, 48000)
+    assert quiet.max() < 60                                # фон почти тёмный
+    kick = r.render(make_tone(60.0, n=1024) * 1.0, 48000)  # удар баса
+    assert kick.max() > 200
+    faded = kick
+    for _ in range(12):
+        faded = r.render(make_tone(60.0, n=1024) * 0.02, 48000)
+    assert faded.max() < 60  # между ударами затухает
 
 
 def test_music_output_bounds():

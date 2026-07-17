@@ -16,8 +16,18 @@ START_CORNERS = ("top-left", "top-right", "bottom-left", "bottom-right")
 DIRECTIONS = ("cw", "ccw")
 BACKENDS = ("auto", "bettercam", "dxcam", "mss", "wfrecorder", "grim")
 MODES = ("capture", "lamp", "music")
-LAMP_EFFECTS = ("solid", "gradient", "rainbow", "rainbow_static", "breathing", "fire")
-MUSIC_EFFECTS = ("spectrum", "pulse")
+LAMP_EFFECTS = (
+    "solid",
+    "gradient",
+    "rainbow",
+    "rainbow_static",
+    "breathing",
+    "fire",
+    "comet",
+    "aurora",
+    "starry",
+)
+MUSIC_EFFECTS = ("spectrum", "pulse", "wave", "beat")
 
 APP_NAME = "adalight"
 

@@ -37,6 +37,34 @@ def test_plugin_flash_uses_settings():
     assert flashes == [("#ff0000", 0.1, 0.2, 0.5, 1.6)]
 
 
+def test_example_plugin_template_is_valid():
+    """Шаблон из examples/ обязан соответствовать контракту плагина."""
+    import importlib.util
+    from pathlib import Path
+
+    path = (
+        Path(__file__).resolve().parent.parent
+        / "examples" / "plugins" / "break_reminder.py"
+    )
+    spec = importlib.util.spec_from_file_location("example_break_reminder", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    plugin = module.create_plugin()
+    assert plugin.name == "break_reminder"
+    assert plugin.title and plugin.description
+    flashes, notes = [], []
+    plugin.start(make_api(flashes, notes), {"interval_min": 0.001})
+    import time
+
+    deadline = time.time() + 3.0
+    while not flashes and time.time() < deadline:
+        time.sleep(0.02)
+    plugin.stop()
+    assert flashes, "шаблон должен вспыхнуть за интервал"
+    assert flashes[0][0] == "#2ecc71"
+    assert notes and notes[0][0] == "Перерыв!"
+
+
 def test_create_plugin_interface():
     plugin = create_plugin()
     assert plugin.name == "notifications"

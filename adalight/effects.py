@@ -85,6 +85,34 @@ def render_lamp(
         factor = 0.12 + 0.88 * (0.5 + 0.5 * phase)
         return np.tile(color * factor, (n, 1))
 
+    if effect == "comet":
+        # комета выбранного цвета бежит по периметру, за ней тает хвост
+        head = (t * (0.05 + speed * 0.6)) % 1.0
+        behind = (head - np.arange(n) / max(n, 1)) % 1.0  # доля круга позади головы
+        tail = np.exp(-behind * 16.0)
+        return color * tail[:, None]
+
+    if effect == "aurora":
+        # северное сияние: две медленные волны, оттенки зелёный <-> фиолетовый
+        tt = t * (0.15 + speed * 0.85)
+        pos = np.arange(n) / max(n, 1)
+        w1 = np.sin(2.0 * np.pi * pos * 1.5 + tt * 0.9)
+        w2 = np.sin(2.0 * np.pi * pos * 2.3 - tt * 0.6 + 1.7)
+        hues = 0.55 + 0.23 * w1  # ~0.32 (зелёный) .. ~0.78 (фиолетовый)
+        value = 0.35 + 0.55 * (0.5 + 0.5 * w2)
+        return hsv_strip(hues, value)
+
+    if effect == "starry":
+        # звёздное небо: тёмная синева, звёзды мерцают каждая в своём ритме
+        idx = np.arange(n)
+        phases = (idx * 12.9898) % (2.0 * np.pi)
+        freqs = 0.25 + (idx * 7.233) % 1.0  # 0.25..1.25 Гц у каждой звезды
+        tw = np.sin(2.0 * np.pi * freqs * t * (0.25 + speed * 0.75) + phases)
+        star = np.clip(tw, 0.0, 1.0) ** 6  # редкие острые вспышки
+        sky = np.array([6.0, 10.0, 36.0])
+        starlight = np.array([255.0, 240.0, 200.0])
+        return sky + star[:, None] * (starlight - sky)
+
     raise ValueError(f"Неизвестный эффект лампы: {effect!r}")
 
 
@@ -151,6 +179,8 @@ class MusicRenderer:
     """Превращает аудиоблоки в цвета ленты. Держит АРУ (автоусиление),
     чтобы тихая и громкая музыка выглядели одинаково живо."""
 
+    WAVE_HISTORY = 60  # кадров истории баса для бегущей волны
+
     def __init__(self, effect: str, color: str, gain: float, n_leds: int):
         self.effect = effect
         self.color = np.array(parse_hex_color(color), dtype=np.float64)
@@ -158,6 +188,9 @@ class MusicRenderer:
         self.n = n_leds
         self._peak = 1e-6
         self._smoothed = np.zeros(n_leds)
+        self._wave_history = [0.0] * self.WAVE_HISTORY
+        self._beat_avg = 1e-6
+        self._beat_flash = 0.0
 
     def _agc(self, values: np.ndarray) -> np.ndarray:
         """Нормировка на медленно затухающий пик; gain подкручивает чувствительность.
@@ -172,7 +205,16 @@ class MusicRenderer:
     def render(self, samples: np.ndarray, samplerate: int) -> np.ndarray:
         if self.effect == "pulse":
             return self._render_pulse(samples, samplerate)
+        if self.effect == "wave":
+            return self._render_wave(samples, samplerate)
+        if self.effect == "beat":
+            return self._render_beat(samples, samplerate)
         return self._render_spectrum(samples, samplerate)
+
+    def _bass_level(self, samples: np.ndarray, samplerate: int) -> float:
+        """Энергия баса (40..150 Гц), нормированная АРУ в 0..1."""
+        bass = self._bands(samples, samplerate, 12)[:3].mean()
+        return float(self._agc(np.array([bass]))[0])
 
     def _bands(self, samples: np.ndarray, samplerate: int, count: int) -> np.ndarray:
         """Логарифмические частотные полосы 40 Гц..8 кГц."""
@@ -196,7 +238,32 @@ class MusicRenderer:
 
     def _render_pulse(self, samples: np.ndarray, samplerate: int) -> np.ndarray:
         """Вся лента пульсирует одним цветом от энергии баса (40..150 Гц)."""
-        bass = self._bands(samples, samplerate, 12)[:3].mean()
-        level = float(self._agc(np.array([bass]))[0])
+        level = self._bass_level(samples, samplerate)
         self._smoothed = np.maximum(level, self._smoothed * 0.85)
         return np.tile(self.color * float(self._smoothed[0]), (self.n, 1))
+
+    def _render_wave(self, samples: np.ndarray, samplerate: int) -> np.ndarray:
+        """Волны от баса: рождаются в середине ленты и разбегаются к краям.
+
+        История уровней баса — лента времени фиксированной длины: центр диода
+        читает «сейчас», края — прошлое, поэтому всплеск баса виден как волна,
+        уходящая от центра к краям.
+        """
+        self._wave_history.insert(0, self._bass_level(samples, samplerate))
+        del self._wave_history[self.WAVE_HISTORY :]
+        history = np.array(self._wave_history)
+        center = (self.n - 1) / 2.0
+        dist = np.abs(np.arange(self.n) - center) / max(center, 1.0)  # 0..1
+        idx = (dist * (self.WAVE_HISTORY - 1)).astype(int)
+        return self.color * history[idx][:, None]
+
+    def _render_beat(self, samples: np.ndarray, samplerate: int) -> np.ndarray:
+        """Вспышки на битах: удар баса заметно выше среднего — вся лента вспыхивает."""
+        bass = float(self._bands(samples, samplerate, 12)[:3].mean())
+        self._beat_avg = self._beat_avg * 0.95 + bass * 0.05
+        if bass > self._beat_avg * 1.6 and bass > 1e-6:
+            self._beat_flash = 1.0
+        else:
+            self._beat_flash *= 0.82  # быстрое затухание между ударами
+        level = min(self._beat_flash * self.gain, 1.0)
+        return np.tile(self.color * level, (self.n, 1))

@@ -28,11 +28,13 @@ layout, and a tray icon so the lighting keeps running with the window closed.
 - **Autostart**: launch on login minimized to tray with lighting on
   (Windows registry / XDG autostart).
 - **Lamp mode**: solid color / gradient / rainbows / breathing / **fireplace**
-  (a hearth at the bottom-center with sparks) — the strip works without screen capture.
+  (a hearth with sparks) / **comet** / **aurora** / **starry sky** — the strip
+  works without screen capture.
 - **Tray notifications**: lighting on/off (when the window is hidden) and new
   version releases (checked every 30 minutes); can be disabled in System.
-- **Music mode**: system loopback audio drives the LEDs — a perimeter spectrum
-  or a bass-driven pulse, with adjustable sensitivity.
+- **Music mode**: system loopback audio drives the LEDs — a perimeter spectrum,
+  a bass-driven pulse, **bass waves** and **beat flashes**, with adjustable
+  sensitivity.
 - **Night mode**: one button makes everything warmer (3400K), dimmer (×0.6)
   and smoother — on top of your current settings.
 - **Color pipeline**: color temperature (white balance) and a shadow noise
@@ -42,6 +44,8 @@ layout, and a tray icon so the lighting keeps running with the window closed.
   new versions install silently at startup.
 - **Plugins**: an extension system — drop .py files with `create_plugin()` into
   `<config>/plugins/`; the API provides strip flashes and tray notifications.
+  Docs and a template: [docs/PLUGINS.md](docs/PLUGINS.md) (ru),
+  [examples/plugins/break_reminder.py](examples/plugins/break_reminder.py).
 - **Notification flashes** (built-in plugin): Telegram — a blue flash,
   Discord — purple, at any point of the perimeter, over any mode.
   Windows requires notification-access permission.
@@ -131,7 +135,7 @@ uv run main.py --list-ports
 - [x] **WLED-UDP transport** — ESP strip over Wi-Fi, no wire and no baud-rate cap (beta)
 - [x] **Notification integrations** — a color flash: Telegram blue, Discord purple
 - [x] **Plugin system** — custom effects and integrations without rebuilding (first API)
-- [ ] **More music effects** (bass waves, beat flashes)
+- [x] **More music effects** (bass waves, beat flashes)
 - [ ] **Multi-monitor** — independent strip segments across screens
 - [ ] **xdg-desktop-portal / PipeWire capture** — GNOME and KDE support on Wayland
 - [ ] **English UI localization**

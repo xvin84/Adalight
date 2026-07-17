@@ -120,8 +120,16 @@ _LAMP_EFFECT_LABELS = {
     "rainbow_static": "Радуга (статичная)",
     "breathing": "Дыхание",
     "fire": "Камин",
+    "comet": "Комета",
+    "aurora": "Северное сияние",
+    "starry": "Звёздное небо",
 }
-_MUSIC_EFFECT_LABELS = {"spectrum": "Спектр по периметру", "pulse": "Пульс от баса"}
+_MUSIC_EFFECT_LABELS = {
+    "spectrum": "Спектр по периметру",
+    "pulse": "Пульс от баса",
+    "wave": "Волны от баса",
+    "beat": "Вспышки на битах",
+}
 _MAIN_MODES: tuple[Mode, ...] = ("live", "lamp", "music")
 _PRESET_ICONS = {"Кино": "film", "Игра": "gamepad", "Работа": "briefcase"}
 _THEME_LABELS = {"dark": "Тёмная", "light": "Светлая", "system": "Системная"}
@@ -805,8 +813,9 @@ class MainWindow(QMainWindow):
     def _sync_lamp_rows(self) -> None:
         effect = self.cb_lamp_effect.currentData()
         rows = {
-            self.btn_lamp_color: effect in ("solid", "breathing"),
-            self._lamp_speed_w: effect in ("rainbow", "breathing", "fire"),
+            self.btn_lamp_color: effect in ("solid", "breathing", "comet"),
+            self._lamp_speed_w: effect
+            in ("rainbow", "breathing", "fire", "comet", "aurora", "starry"),
             self.gradient_editor: effect == "gradient",
             self._fire_height_w: effect == "fire",
             self._fire_intensity_w: effect == "fire",
@@ -823,7 +832,7 @@ class MainWindow(QMainWindow):
         self._on_soft_changed()
 
     def _sync_music_rows(self) -> None:
-        show_color = self.cb_music_effect.currentData() == "pulse"
+        show_color = self.cb_music_effect.currentData() in ("pulse", "wave", "beat")
         label = self._music_form.labelForField(self.btn_music_color)
         if label is not None:
             label.setVisible(show_color)
@@ -1336,11 +1345,18 @@ class MainWindow(QMainWindow):
     def _plugin_groups(self) -> list[QWidget]:
         groups: list[QWidget] = []
         intro = QLabel(
-            "Плагины расширяют Adalight. Свои плагины кладите в папку "
-            "plugins рядом с конфигом — файл .py с функцией create_plugin()."
+            "Плагины расширяют Adalight. Свой плагин — это .py-файл с функцией "
+            "create_plugin() в папке плагинов; шаблон и документация — "
+            '<a href="https://github.com/xvin84/Adalight/blob/main/docs/PLUGINS.md">'
+            "docs/PLUGINS.md</a>."
         )
         intro.setWordWrap(True)
+        intro.setOpenExternalLinks(True)
         groups.append(intro)
+
+        btn_dir = QPushButton("Открыть папку плагинов")
+        btn_dir.clicked.connect(self._open_plugins_dir)
+        groups.append(btn_dir)
         for loaded in self.plugin_manager.plugins:
             g = QGroupBox(loaded.title)
             lay = QVBoxLayout(g)
@@ -1361,6 +1377,13 @@ class MainWindow(QMainWindow):
                 lay.addLayout(self._notifications_settings())
             groups.append(g)
         return groups
+
+    def _open_plugins_dir(self) -> None:
+        from ..plugins.manager import plugins_dir
+
+        target = plugins_dir()
+        target.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
 
     def _notifications_settings(self) -> QFormLayout:
         form = QFormLayout()
