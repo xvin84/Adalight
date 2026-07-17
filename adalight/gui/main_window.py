@@ -357,8 +357,10 @@ class MainWindow(QMainWindow):
         # показать в списке последний применённый профиль (значения уже в конфиге)
         kind = self._settings.value("profile_kind", "")
         name = self._settings.value("profile_name", "")
-        if kind and name:
+        if kind and name and self._find_profile_index((kind, name)) >= 0:
             self._refresh_profiles(select=(kind, name))
+            self._profile_baseline = self._cfg_from_ui()
+            self._update_profile_dirty()
 
         # проверка обновлений: сразу после запуска и далее каждые 30 минут
         QTimer.singleShot(2000, lambda: self._check_updates(silent=True))
@@ -417,6 +419,9 @@ class MainWindow(QMainWindow):
         self.cb_profile.setMinimumWidth(160)
         self.cb_profile.setToolTip("Выбор профиля сразу применяет его настройки")
         self.cb_profile.activated.connect(self._on_profile_selected)
+        self.btn_prof_update = QPushButton()
+        self.btn_prof_update.setFixedWidth(36)
+        self.btn_prof_update.clicked.connect(self._on_profile_update)
         btn_prof_save = QPushButton("Сохранить как…")
         btn_prof_save.setIcon(icon("save"))
         btn_prof_save.setToolTip("Сохранить текущие настройки как именованный профиль")
@@ -427,9 +432,12 @@ class MainWindow(QMainWindow):
         btn_prof_del.setToolTip("Удалить выбранный профиль")
         btn_prof_del.clicked.connect(self._on_profile_delete)
         profiles_row.addWidget(self.cb_profile, 1)
+        profiles_row.addWidget(self.btn_prof_update)
         profiles_row.addWidget(btn_prof_save)
         profiles_row.addWidget(btn_prof_del)
         right.addLayout(profiles_row)
+        self._profile_baseline: Config | None = None
+        self._update_profile_dirty()
 
         # статус-карточка: главное состояние программы одним взглядом
         hero = QFrame()
@@ -1089,6 +1097,49 @@ class MainWindow(QMainWindow):
         self._settings.setValue("profile_kind", kind)
         self._settings.setValue("profile_name", name)
         self._apply_config(cfg, f"Профиль «{name}»")
+        # базовая точка для индикатора правок — после прохода через UI,
+        # чтобы округления слайдеров не считались изменениями
+        self._profile_baseline = self._cfg_from_ui()
+        self._update_profile_dirty()
+
+    def _update_profile_dirty(self) -> None:
+        """Иконка кнопки сохранения профиля: жёлтая, если есть несохранённые правки."""
+        data = self.cb_profile.currentData()
+        if not data or self._profile_baseline is None:
+            self.btn_prof_update.setIcon(icon("save"))
+            self.btn_prof_update.setEnabled(False)
+            self.btn_prof_update.setToolTip("Профиль не выбран")
+            return
+        dirty = self._cfg_from_ui() != self._profile_baseline
+        kind, name = data
+        self.btn_prof_update.setEnabled(dirty)
+        if not dirty:
+            self.btn_prof_update.setIcon(icon("save"))
+            self.btn_prof_update.setToolTip(f"Профиль «{name}» сохранён")
+        else:
+            self.btn_prof_update.setIcon(icon("save", color="#e0a030"))
+            self.btn_prof_update.setToolTip(
+                f"Есть несохранённые изменения — сохранить в профиль «{name}»"
+                if kind == "user"
+                else "Настройки отличаются от пресета — сохранить как свой профиль…"
+            )
+
+    def _on_profile_update(self) -> None:
+        data = self.cb_profile.currentData()
+        if not data or data[0] != "user":
+            self._on_profile_save()  # пресет перезаписать нельзя — «Сохранить как…»
+            return
+        name = data[1]
+        cfg = self._cfg_from_ui()
+        try:
+            cfg.validate()
+            save_profile(name, cfg)
+        except (ValueError, OSError) as e:
+            QMessageBox.warning(self, "Профиль", str(e))
+            return
+        self._profile_baseline = cfg
+        self._update_profile_dirty()
+        self._toast(f"Профиль «{name}» обновлён")
 
     def _on_profile_save(self) -> None:
         name, ok = QInputDialog.getText(self, "Профиль", "Имя профиля:")
@@ -1108,6 +1159,10 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Профиль", str(e))
             return
         self._refresh_profiles(select=("user", name))
+        self._settings.setValue("profile_kind", "user")
+        self._settings.setValue("profile_name", name)
+        self._profile_baseline = self._cfg_from_ui()
+        self._update_profile_dirty()
         self._toast(f"Профиль «{name}» сохранён")
 
     def _on_profile_delete(self) -> None:
@@ -1535,6 +1590,7 @@ class MainWindow(QMainWindow):
         """«Жёсткая» настройка: перезапуск через 5 с после последнего изменения."""
         if self._loading:
             return
+        self._update_profile_dirty()
         if self._mode not in _MAIN_MODES or self.thread is None:
             return
         self._apply_left = _APPLY_DELAY_S
@@ -1558,6 +1614,7 @@ class MainWindow(QMainWindow):
         """«Мягкая» настройка: применяется к работающему движку сразу, без ресета платы."""
         if self._loading:
             return
+        self._update_profile_dirty()
         if self._mode not in _MAIN_MODES or self.thread is None:
             return
         cfg = self._cfg_from_ui()
