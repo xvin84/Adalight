@@ -50,7 +50,15 @@ def render_lamp(
     speed = float(cfg_like["lamp_speed"])
 
     if effect == "fire":
-        return render_fire(n, t, speed, points)
+        return render_fire(
+            n,
+            t,
+            speed,
+            points,
+            height=float(cfg_like.get("fire_height", 1.0)),
+            intensity=float(cfg_like.get("fire_intensity", 1.0)),
+            sparks=int(cfg_like.get("fire_sparks", 2)),
+        )
 
     if effect == "solid":
         return np.tile(color, (n, 1))
@@ -80,11 +88,21 @@ def render_lamp(
     raise ValueError(f"Неизвестный эффект лампы: {effect!r}")
 
 
-def render_fire(n: int, t: float, speed: float, points: list | None) -> np.ndarray:
+def render_fire(
+    n: int,
+    t: float,
+    speed: float,
+    points: list | None,
+    height: float = 1.0,
+    intensity: float = 1.0,
+    sparks: int = 2,
+) -> np.ndarray:
     """Камин: очаг у нижней середины экрана, пламя затухает к верхним углам.
 
     Эффект детерминирован по t (без состояния): мерцание — смесь несоизмеримых
     синусов на диод, искры — псевдослучайные от номера «тика» времени.
+    height — насколько высоко достаёт жар; intensity — общая яркость;
+    sparks — сколько искр вспыхивает за раз.
     """
     tt = t * (0.5 + 1.7 * speed)
     idx = np.arange(n)
@@ -94,7 +112,7 @@ def render_fire(n: int, t: float, speed: float, points: list | None) -> np.ndarr
         xs = np.array([x for _, x, _ in points])
         ys = np.array([y for _, _, y in points])
         dist = np.sqrt((xs - 0.5) ** 2 + (ys - 1.0) ** 2)
-        heat = np.clip(1.0 - dist / 1.15, 0.06, 1.0)
+        heat = np.clip(1.0 - dist / (1.15 * height), 0.04, 1.0)
     else:  # без геометрии — равномерный костёр
         heat = np.full(n, 0.6)
 
@@ -104,7 +122,7 @@ def render_fire(n: int, t: float, speed: float, points: list | None) -> np.ndarr
         + 0.28 * np.sin(6.3 * tt + idx * 2.39996)
         + 0.22 * np.sin(11.7 * tt + idx * 1.7 + 3.0)
     )
-    v = np.clip(heat * (0.45 + 0.65 * flicker), 0.0, 1.0)
+    v = np.clip(heat * (0.45 + 0.65 * flicker) * intensity, 0.0, 1.0)
 
     # огненная палитра: тлеющий красный -> оранжевый -> жёлтый
     out = np.zeros((n, 3))
@@ -112,16 +130,17 @@ def render_fire(n: int, t: float, speed: float, points: list | None) -> np.ndarr
     out[:, 1] = np.clip(v * 1.6 - 0.35, 0.0, 1.0) * 200.0
     out[:, 2] = np.clip(v * 2.6 - 2.0, 0.0, 1.0) * 90.0
 
-    # искорки: раз в ~0.35 с вспыхивают 1-2 диода в тёплой зоне
-    tick = int(tt / 0.35)
-    rng = np.random.default_rng(tick)
-    fade = 1.0 - (tt / 0.35 - tick)  # искра гаснет в течение тика
-    weights = heat / heat.sum()
-    for spark in rng.choice(n, size=min(2, n), p=weights, replace=False):
-        if rng.random() < 0.7:
-            out[spark] = np.minimum(
-                out[spark] + np.array([255, 220, 130]) * fade, 255.0
-            )
+    # искорки: раз в ~0.35 с вспыхивает несколько диодов в тёплой зоне
+    if sparks > 0:
+        tick = int(tt / 0.35)
+        rng = np.random.default_rng(tick)
+        fade = 1.0 - (tt / 0.35 - tick)  # искра гаснет в течение тика
+        weights = heat / heat.sum()
+        for spark in rng.choice(n, size=min(sparks, n), p=weights, replace=False):
+            if rng.random() < 0.75:
+                out[spark] = np.minimum(
+                    out[spark] + np.array([255, 220, 130]) * fade, 255.0
+                )
     return out
 
 

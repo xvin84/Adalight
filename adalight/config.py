@@ -115,6 +115,11 @@ class Config:
         ]
     )
 
+    # камин
+    fire_height: float = 1.0     # высота пламени: насколько высоко достаёт жар (0.3..1.5)
+    fire_intensity: float = 1.0  # общая яркость пламени (0.2..1.5)
+    fire_sparks: int = 2         # искр за вспышку (0..10)
+
     # Цветомузыка
     music_effect: str = "spectrum"  # spectrum | pulse
     music_color: str = "#ff2d95"
@@ -173,6 +178,12 @@ class Config:
             parse_hex_color(getattr(self, name))  # бросает ValueError
         if not 0.0 <= self.lamp_speed <= 1.0:
             raise ValueError("Скорость эффекта лампы должна быть в диапазоне 0..1")
+        if not 0.3 <= self.fire_height <= 1.5:
+            raise ValueError("Высота пламени должна быть в диапазоне 0.3..1.5")
+        if not 0.2 <= self.fire_intensity <= 1.5:
+            raise ValueError("Интенсивность пламени должна быть в диапазоне 0.2..1.5")
+        if not 0 <= self.fire_sparks <= 10:
+            raise ValueError("Количество искр должно быть в диапазоне 0..10")
         if len(self.lamp_gradient) < 2:
             raise ValueError("Градиенту нужно минимум две цветовые точки")
         for i, stop in enumerate(self.lamp_gradient, start=1):

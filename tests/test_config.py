@@ -72,6 +72,9 @@ def test_validate_accepts_defaults():
         {"theme": "neon"},
         {"wb_r": 0.1},
         {"wb_b": 2.0},
+        {"fire_height": 0.1},
+        {"fire_intensity": 2.0},
+        {"fire_sparks": 20},
     ],
 )
 def test_validate_rejects_bad_values(kw):

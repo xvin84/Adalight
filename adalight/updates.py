@@ -67,6 +67,20 @@ def download(url: str, dest: Path, progress: Callable[[int, int], None] | None =
     return dest
 
 
+def _clean_env() -> dict[str, str]:
+    """Окружение без служебных переменных PyInstaller.
+
+    Их наследование заставляет новый exe искать временную папку старого
+    процесса (уже удалённую) — классическая ошибка «Failed to load Python DLL
+    ... Temp\\_MEI...\\python312.dll» после перезапуска.
+    """
+    return {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith("_PYI_") and k != "_MEIPASS2"
+    }
+
+
 def apply_and_restart(new_file: Path) -> None:
     """Заменяет текущий бинарник и запускает новую версию.
 
@@ -96,8 +110,9 @@ def apply_and_restart(new_file: Path) -> None:
             ["cmd", "/c", str(script)],
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             close_fds=True,
+            env=_clean_env(),
         )
     else:
         os.replace(new_file, current)
         current.chmod(0o755)
-        subprocess.Popen([str(current)], close_fds=True)
+        subprocess.Popen([str(current)], close_fds=True, env=_clean_env())

@@ -108,6 +108,9 @@ class Engine:
             "lamp_color": cfg.lamp_color,
             "lamp_gradient": cfg.lamp_gradient,
             "lamp_speed": cfg.lamp_speed,
+            "fire_height": cfg.fire_height,
+            "fire_intensity": cfg.fire_intensity,
+            "fire_sparks": cfg.fire_sparks,
         }
         self._music = {
             "music_effect": cfg.music_effect,
@@ -168,6 +171,9 @@ class Engine:
         lamp_color: str | None = None,
         lamp_gradient: list[dict] | None = None,
         lamp_speed: float | None = None,
+        fire_height: float | None = None,
+        fire_intensity: float | None = None,
+        fire_sparks: int | None = None,
         music_effect: str | None = None,
         music_color: str | None = None,
         music_gain: float | None = None,
@@ -202,6 +208,9 @@ class Engine:
                 ("lamp_color", lamp_color),
                 ("lamp_gradient", lamp_gradient),
                 ("lamp_speed", lamp_speed),
+                ("fire_height", fire_height),
+                ("fire_intensity", fire_intensity),
+                ("fire_sparks", fire_sparks),
             ):
                 if value is not None:
                     self._lamp[key] = value

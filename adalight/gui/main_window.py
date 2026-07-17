@@ -728,6 +728,25 @@ class MainWindow(QMainWindow):
         self.gradient_editor.changed.connect(self._on_soft_changed)
         form.addRow("Точки:", self.gradient_editor)
 
+        # настройки камина
+        self.sl_fire_height, row = self._slider_row(30, 150)
+        self.sl_fire_height.setToolTip(
+            "Насколько высоко достаёт пламя: меньше — тлеет у низа, больше — до верха"
+        )
+        self._fire_height_w = self._wrap_row(row)
+        form.addRow("Высота пламени:", self._fire_height_w)
+
+        self.sl_fire_intensity, row = self._slider_row(20, 150)
+        self.sl_fire_intensity.setToolTip("Общая яркость пламени")
+        self._fire_intensity_w = self._wrap_row(row)
+        form.addRow("Интенсивность:", self._fire_intensity_w)
+
+        self.sp_fire_sparks = QSpinBox()
+        self.sp_fire_sparks.setRange(0, 10)
+        self.sp_fire_sparks.setToolTip("Сколько искр вспыхивает за раз (0 — без искр)")
+        self.sp_fire_sparks.valueChanged.connect(self._on_soft_changed)
+        form.addRow("Искры:", self.sp_fire_sparks)
+
         self._sync_lamp_rows()
         return g
 
@@ -766,6 +785,9 @@ class MainWindow(QMainWindow):
             self.btn_lamp_color: effect in ("solid", "breathing"),
             self._lamp_speed_w: effect in ("rainbow", "breathing", "fire"),
             self.gradient_editor: effect == "gradient",
+            self._fire_height_w: effect == "fire",
+            self._fire_intensity_w: effect == "fire",
+            self.sp_fire_sparks: effect == "fire",
         }
         for widget, visible in rows.items():
             label = self._lamp_form.labelForField(widget)
@@ -1468,6 +1490,9 @@ class MainWindow(QMainWindow):
         self._set_button_color(self.btn_lamp_color, cfg.lamp_color)
         self.gradient_editor.set_stops(cfg.lamp_gradient)
         self.sl_lamp_speed.setValue(round(cfg.lamp_speed * 100))
+        self.sl_fire_height.setValue(round(cfg.fire_height * 100))
+        self.sl_fire_intensity.setValue(round(cfg.fire_intensity * 100))
+        self.sp_fire_sparks.setValue(cfg.fire_sparks)
         self.cb_music_effect.setCurrentIndex(MUSIC_EFFECTS.index(cfg.music_effect))
         self._set_button_color(self.btn_music_color, cfg.music_color)
         self.sl_music_gain.setValue(round(cfg.music_gain * 100))
@@ -1521,6 +1546,9 @@ class MainWindow(QMainWindow):
             lamp_color=self.btn_lamp_color.property("color_value"),
             lamp_gradient=self.gradient_editor.stops(),
             lamp_speed=self.sl_lamp_speed.value() / 100,
+            fire_height=self.sl_fire_height.value() / 100,
+            fire_intensity=self.sl_fire_intensity.value() / 100,
+            fire_sparks=self.sp_fire_sparks.value(),
             music_effect=self.cb_music_effect.currentData(),
             music_color=self.btn_music_color.property("color_value"),
             music_gain=self.sl_music_gain.value() / 100,
@@ -1679,6 +1707,9 @@ class MainWindow(QMainWindow):
             lamp_color=cfg.lamp_color,
             lamp_gradient=cfg.lamp_gradient,
             lamp_speed=cfg.lamp_speed,
+            fire_height=cfg.fire_height,
+            fire_intensity=cfg.fire_intensity,
+            fire_sparks=cfg.fire_sparks,
             music_effect=cfg.music_effect,
             music_color=cfg.music_color,
             music_gain=cfg.music_gain,

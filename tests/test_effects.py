@@ -116,6 +116,41 @@ def test_fire_flickers():
     assert not np.allclose(a, b)  # пламя живёт
 
 
+def _fire_avg(points, **kw):
+    n = len(points)
+    return np.mean(
+        [
+            render_lamp(lamp_cfg(lamp_effect="fire", fire_sparks=0, **kw), n, t, points)
+            for t in np.linspace(0.0, 3.0, 10)
+        ],
+        axis=0,
+    )
+
+
+def test_fire_height_reaches_top():
+    points = fire_points()
+    top = [i for i, (s, _, _) in enumerate(points) if s == "top"]
+    tall = _fire_avg(points, fire_height=1.5)
+    short = _fire_avg(points, fire_height=0.3)
+    assert tall[top].mean() > short[top].mean() * 1.5  # высокое пламя достаёт до верха
+
+
+def test_fire_intensity_scales_brightness():
+    points = fire_points()
+    bright = _fire_avg(points, fire_intensity=1.5)
+    dim = _fire_avg(points, fire_intensity=0.2)
+    assert bright.mean() > dim.mean() * 1.5
+
+
+def test_fire_without_sparks_is_deterministic():
+    points = fire_points()
+    n = len(points)
+    cfg = lamp_cfg(lamp_effect="fire", fire_sparks=0)
+    assert np.array_equal(
+        render_lamp(cfg, n, 0.7, points), render_lamp(cfg, n, 0.7, points)
+    )
+
+
 def test_fire_without_points_does_not_crash():
     out = render_lamp(lamp_cfg(lamp_effect="fire"), 8, 0.5)
     assert out.shape == (8, 3)
