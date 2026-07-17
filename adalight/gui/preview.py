@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtCore import QRect, QRectF, Qt
+from PySide6.QtCore import QRect, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
@@ -24,17 +24,45 @@ _REF_W, _REF_H = 1920, 1080
 
 
 class LedPreview(QWidget):
-    """Рамка «монитора» с диодами вокруг; внутри — кадр экрана и зоны захвата."""
+    """Рамка «монитора» с диодами вокруг; внутри — кадр экрана и зоны захвата.
+
+    Диоды кликабельны: клик испускает ledClicked(индекс) — главное окно
+    вспыхивает этим диодом на реальной ленте.
+    """
+
+    ledClicked = Signal(int)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setMinimumSize(320, 220)
+        self.setMouseTracking(True)
         self._points: list[tuple[str, float, float]] = []
         self._zones: list[tuple[float, float, float, float]] = []  # x, y, w, h (доли)
+        self._led_rects: list[QRectF] = []  # экранные прямоугольники диодов
         self._colors: np.ndarray | None = None
         self._frame: QImage | None = None
         self.show_screen = True
         self.show_zones = True
+
+    def _led_at(self, pos) -> int:
+        for i, rect in enumerate(self._led_rects):
+            if rect.adjusted(-2, -2, 2, 2).contains(pos):
+                return i
+        return -1
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        index = self._led_at(event.position())
+        if index >= 0:
+            self.ledClicked.emit(index)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        hit = self._led_at(event.position()) >= 0
+        self.setCursor(
+            Qt.CursorShape.PointingHandCursor if hit else Qt.CursorShape.ArrowCursor
+        )
+        if hit:
+            self.setToolTip(f"Диод {self._led_at(event.position()) + 1} — "
+                            "клик, чтобы вспыхнуть им на ленте")
 
     def set_config(self, cfg: Config) -> None:
         """Перестроить раскладку и зоны (вызывается при изменении настроек)."""
@@ -116,6 +144,7 @@ class LedPreview(QWidget):
         size = max(4.0, min(14.0, area.width() / (max_side * 1.6)))
         offset = size * 0.75 + 3  # вынос диода за рамку
 
+        self._led_rects = []
         for i, (side, x, y) in enumerate(self._points):
             cx = area.x() + x * area.width()
             cy = area.y() + y * area.height()
@@ -135,6 +164,7 @@ class LedPreview(QWidget):
                 color = _LED_OFF
 
             rect = QRectF(cx - size / 2, cy - size / 2, size, size)
+            self._led_rects.append(rect)
             if i == 0:
                 p.setPen(QPen(_FIRST_LED_RING, 1.5))
             else:

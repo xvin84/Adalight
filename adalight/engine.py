@@ -118,7 +118,24 @@ class Engine:
 
         self._lum_smoothed = 0.5  # сглаженная яркость сцены 0..1
         self._applied_brightness: float | None = None
+        self._identify: tuple[int, float] | None = None  # (диод, до какого времени)
         self._apply_color_temp()
+
+    def identify(self, index: int, duration: float = 1.5) -> None:
+        """Вспыхнуть белым одним диодом — чтобы найти его на ленте."""
+        self._identify = (int(index), time.monotonic() + duration)
+
+    def _overlay_identify(self, colors: np.ndarray) -> np.ndarray:
+        ident = self._identify
+        if ident is None:
+            return colors
+        index, until = ident
+        if time.monotonic() > until:
+            self._identify = None
+            return colors
+        if 0 <= index < len(colors):
+            colors[index] = (255, 255, 255)
+        return colors
 
     def _apply_color_temp(self) -> None:
         temp = min(self._color_temp, NIGHT_COLOR_TEMP) if self._night else self._color_temp
@@ -317,7 +334,8 @@ class Engine:
                     s = self._effective_smooth()
                     smoothed *= s
                     smoothed += raw * (1.0 - s)
-                    final = self.device.send_processed(smoothed)
+                    final = self._overlay_identify(self.device.process(smoothed))
+                    self.device.send_raw(final)
                     self._emit(final)
 
                 fps_n += 1
@@ -347,7 +365,8 @@ class Engine:
                     lamp = dict(self._lamp)
                 raw = render_lamp(lamp, n, tick - t0)
                 self._apply_brightness(None)
-                final = self.device.send_processed(raw)
+                final = self._overlay_identify(self.device.process(raw))
+                self.device.send_raw(final)
                 self._emit(final)
                 dt = time.monotonic() - tick
                 if dt < frame_time:
@@ -375,7 +394,8 @@ class Engine:
                         self._music_dirty = False
                 raw = renderer.render(block, audio.samplerate)
                 self._apply_brightness(None)
-                final = self.device.send_processed(raw)
+                final = self._overlay_identify(self.device.process(raw))
+                self.device.send_raw(final)
                 self._emit(final)
 
                 fps_n += 1

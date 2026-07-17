@@ -172,6 +172,29 @@ def test_lamp_mode_sends_solid_color():
     assert np.all(colors[:, 1] == 0) and np.all(colors[:, 2] == 0)
 
 
+def test_identify_flashes_single_led():
+    cfg = make_cfg(target_fps=120)
+    fake_serial = FakeSerial()
+    engine = Engine(cfg, backend_factory=lambda _: FakeBackend(color=(10, 10, 10)))
+    engine.device.connect = lambda: setattr(engine.device, "ser", fake_serial)
+
+    t = threading.Thread(target=engine.run, args=("live",))
+    t.start()
+    deadline = time.time() + 5.0
+    while len(fake_serial.frames) < 2 and time.time() < deadline:
+        time.sleep(0.01)
+    engine.identify(3)
+    seen = len(fake_serial.frames)
+    while len(fake_serial.frames) < seen + 2 and time.time() < deadline:
+        time.sleep(0.01)
+    engine.stop()
+    t.join(timeout=5.0)
+
+    colors = np.frombuffer(fake_serial.frames[-2][6:], np.uint8).reshape(-1, 3)
+    assert np.array_equal(colors[3], (255, 255, 255))  # выбранный диод — белый
+    assert colors[0].max() < 50                        # остальные — тёмные
+
+
 def test_band_rects_and_localize_roundtrip():
     cfg = make_cfg(band_size=0.2, window_size=0.1)
     geom = LedGeometry(cfg)

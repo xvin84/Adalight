@@ -19,7 +19,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, Qt, QThread, QTime, QTimer, QUrl, Signal
+from PySide6.QtCore import QSettings, QSize, Qt, QThread, QTime, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QPainter, QPixmap
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import (
@@ -30,11 +30,14 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -47,7 +50,6 @@ from PySide6.QtWidgets import (
     QSystemTrayIcon,
     QTableWidget,
     QTableWidgetItem,
-    QTabWidget,
     QTimeEdit,
     QVBoxLayout,
     QWidget,
@@ -66,6 +68,7 @@ from ..config import (
     START_CORNERS,
     Config,
     apply_preset,
+    default_config_path,
     delete_profile,
     list_profiles,
     load_profile,
@@ -75,6 +78,7 @@ from ..device import list_serial_ports
 from ..engine import Engine, Mode
 from ..schedule import parse_time
 from .gradient import GradientEditor
+from .icons import icon
 from .preview import LedPreview
 from .theme import apply_theme
 
@@ -96,6 +100,7 @@ _LAMP_EFFECT_LABELS = {
 }
 _MUSIC_EFFECT_LABELS = {"spectrum": "Спектр по периметру", "pulse": "Пульс от баса"}
 _MAIN_MODES: tuple[Mode, ...] = ("live", "lamp", "music")
+_PRESET_ICONS = {"Кино": "film", "Игра": "gamepad", "Работа": "briefcase"}
 _THEME_LABELS = {"dark": "Тёмная", "light": "Светлая", "system": "Системная"}
 _THEMES = tuple(_THEME_LABELS)
 _BAUDS = ("115200", "230400", "460800", "500000", "921600", "1000000", "2000000")
@@ -166,6 +171,10 @@ class EngineThread(QThread):
     def set_tuning(self, **kwargs) -> None:
         if self._engine is not None:
             self._engine.set_tuning(**kwargs)
+
+    def identify(self, index: int) -> None:
+        if self._engine is not None:
+            self._engine.identify(index)
 
 
 class UpdateCheckThread(QThread):
@@ -333,7 +342,7 @@ class MainWindow(QMainWindow):
         geometry = self._settings.value("geometry")
         if geometry is not None:
             self.restoreGeometry(geometry)
-        self.tabs.setCurrentIndex(int(self._settings.value("tab", 0)))
+        self.nav.setCurrentRow(int(self._settings.value("tab", 0)))
 
         QTimer.singleShot(2000, lambda: self._check_updates(silent=True))
 
@@ -345,25 +354,38 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(10)
 
-        # левая колонка: вкладки настроек
-        tabs = QTabWidget()
-        tabs.addTab(self._make_tab(self._tab_mode_content()), "Режим")
-        tabs.addTab(
-            self._make_tab(self._group_connection(), self._group_leds()), "Устройство"
+        # левая колонка: вертикальная навигация + страницы настроек
+        self.nav = QListWidget()
+        self.nav.setObjectName("sidebar")
+        self.nav.setFixedWidth(158)
+        self.nav.setIconSize(QSize(20, 20))
+        sections = (
+            ("monitor", "Режим"),
+            ("chip", "Устройство"),
+            ("sliders", "Изображение"),
+            ("sun", "Яркость"),
+            ("gear", "Система"),
         )
-        tabs.addTab(self._make_tab(self._group_image()), "Изображение")
-        tabs.addTab(
-            self._make_tab(self._group_adaptive(), self._group_schedule()), "Яркость"
-        )
-        tabs.addTab(
+        for icon_name, label in sections:
+            self.nav.addItem(QListWidgetItem(icon(icon_name), label))
+
+        self.pages = QStackedWidget()
+        self.pages.addWidget(self._make_tab(self._tab_mode_content()))
+        self.pages.addWidget(self._make_tab(self._group_connection(), self._group_leds()))
+        self.pages.addWidget(self._make_tab(self._group_image()))
+        self.pages.addWidget(self._make_tab(self._group_adaptive(), self._group_schedule()))
+        self.pages.addWidget(
             self._make_tab(
                 self._group_appearance(), self._group_system(), self._group_updates()
-            ),
-            "Система",
+            )
         )
-        tabs.setMinimumWidth(400)
-        self.tabs = tabs
-        root.addWidget(tabs, 0)
+        self.pages.setMinimumWidth(340)
+        self.pages.setMaximumWidth(430)
+        self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
+        self.nav.setCurrentRow(0)
+
+        root.addWidget(self.nav, 0)
+        root.addWidget(self.pages, 0)
 
         # правая колонка: профили, предпросмотр и управление
         right = QVBoxLayout()
@@ -374,10 +396,12 @@ class MainWindow(QMainWindow):
         self.cb_profile.setMinimumWidth(160)
         self.cb_profile.setToolTip("Выбор профиля сразу применяет его настройки")
         self.cb_profile.activated.connect(self._on_profile_selected)
-        btn_prof_save = QPushButton("💾 Сохранить как…")
+        btn_prof_save = QPushButton("Сохранить как…")
+        btn_prof_save.setIcon(icon("save"))
         btn_prof_save.setToolTip("Сохранить текущие настройки как именованный профиль")
         btn_prof_save.clicked.connect(self._on_profile_save)
-        btn_prof_del = QPushButton("🗑")
+        btn_prof_del = QPushButton()
+        btn_prof_del.setIcon(icon("trash"))
         btn_prof_del.setFixedWidth(36)
         btn_prof_del.setToolTip("Удалить выбранный профиль")
         btn_prof_del.clicked.connect(self._on_profile_delete)
@@ -386,7 +410,33 @@ class MainWindow(QMainWindow):
         profiles_row.addWidget(btn_prof_del)
         right.addLayout(profiles_row)
 
+        # статус-карточка: главное состояние программы одним взглядом
+        hero = QFrame()
+        hero.setObjectName("hero")
+        hero_lay = QHBoxLayout(hero)
+        hero_lay.setContentsMargins(14, 10, 14, 10)
+        self.lbl_hero_dot = QLabel("●")
+        self.lbl_hero_dot.setObjectName("heroDot")
+        text_col = QVBoxLayout()
+        text_col.setSpacing(0)
+        self.lbl_state = QLabel("Остановлено")
+        self.lbl_state.setObjectName("heroState")
+        self.lbl_hero_sub = QLabel("Нажмите «Старт», чтобы включить подсветку")
+        self.lbl_hero_sub.setObjectName("heroSub")
+        text_col.addWidget(self.lbl_state)
+        text_col.addWidget(self.lbl_hero_sub)
+        self.btn_start = QPushButton("▶ Старт")
+        self.btn_start.setStyleSheet(_BTN_START_QSS)
+        self.btn_start.setMinimumWidth(130)
+        self.btn_start.clicked.connect(self._on_start_stop)
+        hero_lay.addWidget(self.lbl_hero_dot)
+        hero_lay.addLayout(text_col, 1)
+        hero_lay.addWidget(self.btn_start)
+        right.addWidget(hero)
+        self._set_hero_dot("#6a6d73")
+
         self.preview = LedPreview()
+        self.preview.ledClicked.connect(self._on_led_clicked)
         right.addWidget(self.preview, 1)
 
         overlay = QHBoxLayout()
@@ -405,22 +455,19 @@ class MainWindow(QMainWindow):
         right.addLayout(overlay)
 
         controls = QHBoxLayout()
-        self.btn_start = QPushButton("▶ Старт")
-        self.btn_start.setStyleSheet(_BTN_START_QSS)
-        self.btn_start.clicked.connect(self._on_start_stop)
         self.btn_apply = QPushButton("Применить сейчас")
         self.btn_apply.setEnabled(False)
         self.btn_apply.setToolTip(
             "Перезапустить с новыми настройками, не дожидаясь автоприменения"
         )
         self.btn_apply.clicked.connect(lambda: self._start_engine(self._selected_mode()))
-        self.btn_night = QPushButton("🌙 Ночной режим")
+        self.btn_night = QPushButton("Ночной режим")
+        self.btn_night.setIcon(icon("moon"))
         self.btn_night.setCheckable(True)
         self.btn_night.setToolTip(
             "Теплее (3400K), темнее (×0.6) и плавнее — поверх текущих настроек"
         )
         self.btn_night.toggled.connect(self._on_soft_changed)
-        controls.addWidget(self.btn_start, 1)
         controls.addWidget(self.btn_apply, 1)
         controls.addWidget(self.btn_night, 1)
         right.addLayout(controls)
@@ -438,26 +485,53 @@ class MainWindow(QMainWindow):
             tests.addWidget(b)
         right.addWidget(calib)
 
-        btn_save = QPushButton("💾 Сохранить настройки")
+        btn_save = QPushButton("Сохранить настройки")
+        btn_save.setIcon(icon("save"))
         btn_save.clicked.connect(self._on_save)
         right.addWidget(btn_save)
 
         root.addLayout(right, 1)
         self.setCentralWidget(central)
 
-        self.lbl_state = QLabel("Остановлено")
+        self._backend_info = ""
+        self._fps_text = ""
         self.lbl_pending = QLabel("")
         self.btn_update_bar = QPushButton("")
         self.btn_update_bar.setStyleSheet(_BTN_UPDATE_QSS)
         self.btn_update_bar.setVisible(False)
         self.btn_update_bar.clicked.connect(self._start_update)
-        self.lbl_backend = QLabel("")
-        self.lbl_fps = QLabel("")
-        self.statusBar().addWidget(self.lbl_state)
         self.statusBar().addWidget(self.lbl_pending)
         self.statusBar().addPermanentWidget(self.btn_update_bar)
-        self.statusBar().addPermanentWidget(self.lbl_backend)
-        self.statusBar().addPermanentWidget(self.lbl_fps)
+
+    # ── статус-карточка ───────────────────────────────────────────────────
+
+    def _set_hero_dot(self, color: str) -> None:
+        self.lbl_hero_dot.setStyleSheet(
+            f"color: {color}; font-size: 20px; background: transparent;"
+        )
+
+    def _update_hero_sub(self) -> None:
+        parts = [p for p in (self._backend_info, self._fps_text) if p]
+        if parts:
+            self.lbl_hero_sub.setText(" · ".join(parts))
+
+    def _on_led_clicked(self, index: int) -> None:
+        if self.thread is not None and self._mode in _MAIN_MODES:
+            self.thread.identify(index)
+            self._toast(f"Диод {index + 1} вспыхнул на ленте")
+        else:
+            self._toast("Запустите подсветку, чтобы подсветить диод на ленте")
+
+    def _toast(self, message: str) -> None:
+        toast = QLabel(message, self)
+        toast.setObjectName("toast")
+        toast.adjustSize()
+        toast.move(
+            self.width() - toast.width() - 24, self.height() - toast.height() - 44
+        )
+        toast.show()
+        toast.raise_()
+        QTimer.singleShot(2600, toast.deleteLater)
 
     @staticmethod
     def _make_tab(*widgets: QWidget) -> QScrollArea:
@@ -472,6 +546,7 @@ class MainWindow(QMainWindow):
         scroll.setWidget(host)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         return scroll
 
     @staticmethod
@@ -513,7 +588,8 @@ class MainWindow(QMainWindow):
         self.cb_output = QComboBox()
         self.cb_output.setEditable(True)
         self.cb_output.currentTextChanged.connect(self._on_hard_changed)
-        btn = QPushButton("⟳")
+        btn = QPushButton()
+        btn.setIcon(icon("refresh"))
         btn.setFixedWidth(32)
         btn.setToolTip("Обновить список мониторов")
         btn.clicked.connect(self._refresh_outputs)
@@ -663,7 +739,8 @@ class MainWindow(QMainWindow):
         self.cb_port = QComboBox()
         self.cb_port.setEditable(True)
         self.cb_port.currentTextChanged.connect(self._on_hard_changed)
-        btn = QPushButton("⟳")
+        btn = QPushButton()
+        btn.setIcon(icon("refresh"))
         btn.setFixedWidth(32)
         btn.setToolTip("Обновить список портов")
         btn.clicked.connect(self._refresh_ports)
@@ -875,10 +952,21 @@ class MainWindow(QMainWindow):
         row.addWidget(btn_import)
         lay.addLayout(row)
 
+        btn_wizard = QPushButton("Мастер настройки…")
+        btn_wizard.setIcon(icon("wand"))
+        btn_wizard.setToolTip("Пошаговая настройка: порт → диоды → проверка сторон")
+        btn_wizard.clicked.connect(self._open_wizard)
+        lay.addWidget(btn_wizard)
+
         btn_about = QPushButton("О программе")
         btn_about.clicked.connect(self._show_about)
         lay.addWidget(btn_about)
         return g
+
+    def _open_wizard(self) -> None:
+        from .wizard import SetupWizard
+
+        SetupWizard(self).exec()
 
     # ── профили и импорт/экспорт ──────────────────────────────────────────
 
@@ -886,13 +974,13 @@ class MainWindow(QMainWindow):
         """Наполняет комбо: встроенные пресеты, разделитель, профили пользователя."""
         self.cb_profile.blockSignals(True)
         self.cb_profile.clear()
-        for name, spec in PRESET_PROFILES.items():
-            self.cb_profile.addItem(f"{spec['icon']} {name}", ("preset", name))
+        for name in PRESET_PROFILES:
+            self.cb_profile.addItem(icon(_PRESET_ICONS[name]), name, ("preset", name))
         users = list_profiles()
         if users:
             self.cb_profile.insertSeparator(self.cb_profile.count())
             for name in users:
-                self.cb_profile.addItem(f"👤 {name}", ("user", name))
+                self.cb_profile.addItem(icon("user"), name, ("user", name))
         self.cb_profile.setCurrentIndex(self._find_profile_index(select) if select else -1)
         self.cb_profile.blockSignals(False)
 
@@ -914,7 +1002,7 @@ class MainWindow(QMainWindow):
         apply_theme(QApplication.instance(), cfg.theme)
         if self.thread is not None:
             self._start_engine(self._selected_mode())
-        self.statusBar().showMessage(f"{source}: настройки применены", 4000)
+        self._toast(f"{source}: настройки применены")
 
     def _on_profile_selected(self, index: int) -> None:
         data = self.cb_profile.itemData(index)
@@ -953,7 +1041,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Профиль", str(e))
             return
         self._refresh_profiles(select=("user", name))
-        self.statusBar().showMessage(f"Профиль «{name}» сохранён", 3000)
+        self._toast(f"Профиль «{name}» сохранён")
 
     def _on_profile_delete(self) -> None:
         data = self.cb_profile.currentData()
@@ -972,7 +1060,7 @@ class MainWindow(QMainWindow):
             return
         delete_profile(name)
         self._refresh_profiles()
-        self.statusBar().showMessage(f"Профиль «{name}» удалён", 3000)
+        self._toast(f"Профиль «{name}» удалён")
 
     def _on_export(self) -> None:
         cfg = self._cfg_from_ui()
@@ -987,7 +1075,7 @@ class MainWindow(QMainWindow):
         if not path:
             return
         cfg.save(Path(path))
-        self.statusBar().showMessage(f"Настройки экспортированы: {path}", 4000)
+        self._toast("Настройки экспортированы")
 
     def _on_import(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -1452,10 +1540,8 @@ class MainWindow(QMainWindow):
         self.thread.colorsReady.connect(self.preview.set_colors)
         self.thread.colorsReady.connect(self._mark_boot_ok)
         self.thread.frameReady.connect(self.preview.set_frame)
-        self.thread.fpsChanged.connect(lambda f: self.lbl_fps.setText(f"{f:.1f} fps"))
-        self.thread.backendReady.connect(
-            lambda name: self.lbl_backend.setText(f"Бэкенд: {name}")
-        )
+        self.thread.fpsChanged.connect(self._on_fps)
+        self.thread.backendReady.connect(self._on_backend_info)
         self.thread.failed.connect(self._on_engine_failed)
         self.thread.finished.connect(self._on_engine_finished)
         self.thread.start()
@@ -1468,10 +1554,22 @@ class MainWindow(QMainWindow):
             "chase": "Бегущий диод",
             "off": "Гашение",
         }
-        self.lbl_state.setText(f"{names[mode]}: работает")
+        self.lbl_state.setText(names[mode])
+        self._backend_info = ""
+        self._fps_text = ""
+        self.lbl_hero_sub.setText("Запуск…")
+        self._set_hero_dot("#2ecc71")
         self.btn_start.setText("■ Стоп")
         self.btn_start.setStyleSheet(_BTN_STOP_QSS)
         self.btn_apply.setEnabled(mode in _MAIN_MODES)
+
+    def _on_fps(self, fps: float) -> None:
+        self._fps_text = f"{fps:.1f} fps"
+        self._update_hero_sub()
+
+    def _on_backend_info(self, name: str) -> None:
+        self._backend_info = name
+        self._update_hero_sub()
 
     def _stop_engine(self) -> None:
         self._cancel_pending_apply()
@@ -1485,7 +1583,10 @@ class MainWindow(QMainWindow):
     def _reset_running_ui(self) -> None:
         self._mode = None
         self.lbl_state.setText("Остановлено")
-        self.lbl_fps.setText("")
+        self.lbl_hero_sub.setText("Нажмите «Старт», чтобы включить подсветку")
+        self._set_hero_dot("#6a6d73")
+        self._backend_info = ""
+        self._fps_text = ""
         self.btn_start.setText("▶ Старт")
         self.btn_start.setStyleSheet(_BTN_START_QSS)
         self.btn_apply.setEnabled(False)
@@ -1514,7 +1615,40 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(_BOOT_RETRY_DELAY_MS, self._retry_boot)
             return
         self._booting = False
-        QMessageBox.critical(self, "Ошибка", message)
+        self._show_friendly_error(message)
+
+    def _show_friendly_error(self, message: str) -> None:
+        """Ошибка человеческим языком + подсказки; технические детали — по кнопке."""
+        low = message.lower()
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Critical)
+        box.setWindowTitle("Ошибка")
+        if "порт" in low or "serial" in low:
+            box.setText("Не удалось подключиться к устройству.")
+            box.setInformativeText(
+                "• Проверьте USB-кабель (бывают кабели «только зарядка»)\n"
+                "• Выберите другой порт: Устройство → Порт → кнопка обновления\n"
+                "• Порт может быть занят другой программой — закройте её\n"
+                "• Скорость должна совпадать с прошивкой"
+            )
+        elif any(w in low for w in ("захват", "монитор", "кадр", "dxcam", "bettercam",
+                                    "mss", "wf-recorder", "grim")):
+            box.setText("Не удалось захватить экран.")
+            box.setInformativeText(
+                "• Попробуйте другой бэкенд: Режим → Бэкенд\n"
+                "• Проверьте номер монитора\n"
+                "• На Wayland нужен установленный wf-recorder"
+            )
+        elif any(w in low for w in ("звук", "loopback", "soundcard", "аудио")):
+            box.setText("Не удалось захватить системный звук.")
+            box.setInformativeText(
+                "• Проверьте, что в системе выбрано устройство вывода звука\n"
+                "• Включите музыку и попробуйте ещё раз"
+            )
+        else:
+            box.setText("Что-то пошло не так.")
+        box.setDetailedText(message)
+        box.exec()
 
     def _retry_boot(self) -> None:
         if self.thread is None:  # пользователь мог уже запустить/остановить вручную
@@ -1545,9 +1679,7 @@ class MainWindow(QMainWindow):
             self.ch_autostart.setChecked(not enabled)
             self.ch_autostart.blockSignals(False)
             return
-        self.statusBar().showMessage(
-            "Автозапуск включён" if enabled else "Автозапуск выключен", 3000
-        )
+        self._toast("Автозапуск включён" if enabled else "Автозапуск выключен")
 
     def _on_save(self) -> None:
         cfg = self._cfg_from_ui()
@@ -1556,22 +1688,25 @@ class MainWindow(QMainWindow):
         except ValueError as e:
             QMessageBox.warning(self, "Настройки", str(e))
             return
-        path = cfg.save()
+        cfg.save()
         self.cfg = cfg
-        self.statusBar().showMessage(f"Сохранено: {path}", 4000)
+        self._toast("Настройки сохранены")
 
     def _fill_tray_profiles(self, menu: QMenu) -> None:
         menu.clear()
-        for name, spec in PRESET_PROFILES.items():
+        for name in PRESET_PROFILES:
             menu.addAction(
-                f"{spec['icon']} {name}",
+                icon(_PRESET_ICONS[name]),
+                name,
                 lambda n=name: self._select_profile("preset", n),
             )
         users = list_profiles()
         if users:
             menu.addSeparator()
         for name in users:
-            menu.addAction(f"👤 {name}", lambda n=name: self._select_profile("user", n))
+            menu.addAction(
+                icon("user"), name, lambda n=name: self._select_profile("user", n)
+            )
 
     def _show_from_tray(self) -> None:
         self.showNormal()
@@ -1584,7 +1719,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt API)
         self._settings.setValue("geometry", self.saveGeometry())
-        self._settings.setValue("tab", self.tabs.currentIndex())
+        self._settings.setValue("tab", self.nav.currentRow())
         if self.tray is not None and not self._quitting:
             event.ignore()
             self.hide()
@@ -1621,6 +1756,7 @@ def run(minimized: bool = False) -> int:
     server = QLocalServer()
     server.listen(_INSTANCE_KEY)
 
+    first_run = not default_config_path().is_file()
     apply_theme(app, Config.load().theme)
     win = MainWindow()
     server.newConnection.connect(win._show_from_tray)
@@ -1628,4 +1764,6 @@ def run(minimized: bool = False) -> int:
         win.start_minimized()  # подсветка включается, окно остаётся в трее
     else:
         win.show()
+        if first_run:
+            QTimer.singleShot(400, win._open_wizard)
     return app.exec()

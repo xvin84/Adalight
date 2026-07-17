@@ -37,8 +37,12 @@ layout, and a tray icon so the lighting keeps running with the window closed.
   cut-off so dark scenes don't make the LEDs glow with noise.
 - **Auto-update**: the app checks GitHub Releases, downloads the new binary and
   restarts itself — no manual downloading.
-- **Tabbed UI with live screen preview**: the preview pane shows the captured
-  screen with the exact color-sampling zones overlaid; dark / light / system theme.
+- **Modern UI**: sidebar navigation with SVG icons, a status card
+  (state · backend · fps), live preview with the captured screen and sampling
+  zones — **clicking an LED in the preview flashes it on the real strip**;
+  dark / light / system theme.
+- **First-run wizard**: port → LEDs → side check in three steps
+  (also available anytime: System → "Setup wizard…").
 - **Windows installer** (`Adalight-Setup.exe`): installs per-user (no admin),
   start-menu/desktop shortcuts and optional autostart.
 - Single-instance: launching the app again just raises the running window.

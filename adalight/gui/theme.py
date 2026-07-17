@@ -134,6 +134,27 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
 QStatusBar {{ background: {t["input"]}; color: {t["text_dim"]}; }}
 QStatusBar::item {{ border: none; }}
 
+QListWidget#sidebar {{ background: transparent; border: none; outline: none; }}
+QListWidget#sidebar::item {{
+    padding: 10px 12px; margin: 2px 4px; border-radius: 8px; color: {t["text_dim"]};
+}}
+QListWidget#sidebar::item:selected {{
+    background: {t["hover"]}; color: {t["text"]}; font-weight: 600;
+}}
+QListWidget#sidebar::item:hover:!selected {{ background: {t["card"]}; }}
+
+QFrame#hero {{
+    background: {t["card"]}; border: 1px solid {t["border"]}; border-radius: 10px;
+}}
+QLabel#heroState {{ font-size: 16px; font-weight: 700; background: transparent; }}
+QLabel#heroSub {{ color: {t["text_dim"]}; background: transparent; }}
+QLabel#heroDot {{ font-size: 20px; background: transparent; }}
+
+QLabel#toast {{
+    background: {t["hover"]}; color: {t["text"]};
+    border: 1px solid {t["border"]}; border-radius: 8px; padding: 8px 14px;
+}}
+
 QMenu {{
     background: {t["card"]}; border: 1px solid {t["border"]};
     border-radius: 8px; padding: 4px;
