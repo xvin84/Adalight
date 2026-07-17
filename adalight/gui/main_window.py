@@ -1635,6 +1635,11 @@ class MainWindow(QMainWindow):
         profiles_menu.aboutToShow.connect(
             lambda: self._fill_tray_profiles(profiles_menu)
         )
+        effects_menu = QMenu("Эффекты", menu)
+        for effect, label in _LAMP_EFFECT_LABELS.items():
+            effects_menu.addAction(
+                label, lambda e=effect: self._quick_lamp_effect(e)
+            )
         act_about = QAction("О программе", menu)
         act_about.triggered.connect(self._show_about)
         act_quit = QAction("Выход", menu)
@@ -1643,6 +1648,7 @@ class MainWindow(QMainWindow):
         menu.addAction(act_start)
         menu.addAction(act_night)
         menu.addMenu(profiles_menu)
+        menu.addMenu(effects_menu)
         menu.addSeparator()
         menu.addAction(act_about)
         menu.addAction(act_quit)
@@ -2137,6 +2143,16 @@ class MainWindow(QMainWindow):
         cfg.save()
         self.cfg = cfg
         self._toast("Настройки сохранены")
+
+    def _quick_lamp_effect(self, effect: str) -> None:
+        """Из трея: включить лампу с выбранным эффектом одним кликом."""
+        was_loading, self._loading = self._loading, True
+        self.cb_mode.setCurrentIndex(MODES.index("lamp"))
+        self.mode_stack.setCurrentIndex(MODES.index("lamp"))
+        self.cb_lamp_effect.setCurrentIndex(LAMP_EFFECTS.index(effect))
+        self._sync_lamp_rows()
+        self._loading = was_loading
+        self._start_engine("lamp")
 
     def _fill_tray_profiles(self, menu: QMenu) -> None:
         menu.clear()
