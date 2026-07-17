@@ -38,11 +38,19 @@ def hsv_strip(hues: np.ndarray, value: np.ndarray | float = 1.0) -> np.ndarray:
 # ── лампа ────────────────────────────────────────────────────────────────
 
 
-def render_lamp(cfg_like: dict, n: int, t: float) -> np.ndarray:
-    """Кадр лампы: effect/color/gradient/speed из dict'а (см. Engine), t — секунды."""
+def render_lamp(
+    cfg_like: dict, n: int, t: float, points: list | None = None
+) -> np.ndarray:
+    """Кадр лампы: effect/color/gradient/speed из dict'а (см. Engine), t — секунды.
+
+    points — раскладка диодов (side, x, y) для эффектов, зависящих от геометрии.
+    """
     effect = cfg_like["lamp_effect"]
     color = np.array(parse_hex_color(cfg_like["lamp_color"]), dtype=np.float64)
     speed = float(cfg_like["lamp_speed"])
+
+    if effect == "fire":
+        return render_fire(n, t, speed, points)
 
     if effect == "solid":
         return np.tile(color, (n, 1))
@@ -70,6 +78,51 @@ def render_lamp(cfg_like: dict, n: int, t: float) -> np.ndarray:
         return np.tile(color * factor, (n, 1))
 
     raise ValueError(f"Неизвестный эффект лампы: {effect!r}")
+
+
+def render_fire(n: int, t: float, speed: float, points: list | None) -> np.ndarray:
+    """Камин: очаг у нижней середины экрана, пламя затухает к верхним углам.
+
+    Эффект детерминирован по t (без состояния): мерцание — смесь несоизмеримых
+    синусов на диод, искры — псевдослучайные от номера «тика» времени.
+    """
+    tt = t * (0.5 + 1.7 * speed)
+    idx = np.arange(n)
+
+    # базовый «жар»: расстояние от очага (0.5, 1.0) в нормированных координатах
+    if points and len(points) == n:
+        xs = np.array([x for _, x, _ in points])
+        ys = np.array([y for _, _, y in points])
+        dist = np.sqrt((xs - 0.5) ** 2 + (ys - 1.0) ** 2)
+        heat = np.clip(1.0 - dist / 1.15, 0.06, 1.0)
+    else:  # без геометрии — равномерный костёр
+        heat = np.full(n, 0.6)
+
+    # мерцание: два синуса с несоизмеримыми частотами и фазами на диод
+    flicker = (
+        0.5
+        + 0.28 * np.sin(6.3 * tt + idx * 2.39996)
+        + 0.22 * np.sin(11.7 * tt + idx * 1.7 + 3.0)
+    )
+    v = np.clip(heat * (0.45 + 0.65 * flicker), 0.0, 1.0)
+
+    # огненная палитра: тлеющий красный -> оранжевый -> жёлтый
+    out = np.zeros((n, 3))
+    out[:, 0] = np.clip(v * 2.2, 0.0, 1.0) * 255.0
+    out[:, 1] = np.clip(v * 1.6 - 0.35, 0.0, 1.0) * 200.0
+    out[:, 2] = np.clip(v * 2.6 - 2.0, 0.0, 1.0) * 90.0
+
+    # искорки: раз в ~0.35 с вспыхивают 1-2 диода в тёплой зоне
+    tick = int(tt / 0.35)
+    rng = np.random.default_rng(tick)
+    fade = 1.0 - (tt / 0.35 - tick)  # искра гаснет в течение тика
+    weights = heat / heat.sum()
+    for spark in rng.choice(n, size=min(2, n), p=weights, replace=False):
+        if rng.random() < 0.7:
+            out[spark] = np.minimum(
+                out[spark] + np.array([255, 220, 130]) * fade, 255.0
+            )
+    return out
 
 
 # ── цветомузыка ──────────────────────────────────────────────────────────

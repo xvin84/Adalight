@@ -84,6 +84,43 @@ def test_hsv_strip_pure_hues():
     assert np.allclose(out[2], (0, 0, 255))
 
 
+def fire_points():
+    from adalight.config import Config
+    from adalight.geometry import LedGeometry
+
+    cfg = Config(leds_top=10, leds_right=4, leds_bottom=10, leds_left=4)
+    return LedGeometry(cfg).points
+
+
+def test_fire_bottom_hotter_than_top():
+    points = fire_points()
+    n = len(points)
+    frames = [
+        render_lamp(lamp_cfg(lamp_effect="fire"), n, t, points)
+        for t in np.linspace(0.0, 3.0, 12)
+    ]
+    avg = np.mean(frames, axis=0)
+    sides = [s for s, _, _ in points]
+    bottom = avg[[i for i, s in enumerate(sides) if s == "bottom"], 0].mean()
+    top = avg[[i for i, s in enumerate(sides) if s == "top"], 0].mean()
+    assert bottom > top * 1.4  # очаг снизу заметно жарче
+    for f in frames:
+        assert f.min() >= 0.0 and f.max() <= 255.0
+
+
+def test_fire_flickers():
+    points = fire_points()
+    n = len(points)
+    a = render_lamp(lamp_cfg(lamp_effect="fire"), n, 0.0, points)
+    b = render_lamp(lamp_cfg(lamp_effect="fire"), n, 1.0, points)
+    assert not np.allclose(a, b)  # пламя живёт
+
+
+def test_fire_without_points_does_not_crash():
+    out = render_lamp(lamp_cfg(lamp_effect="fire"), 8, 0.5)
+    assert out.shape == (8, 3)
+
+
 def make_tone(freq: float, samplerate: int = 48000, n: int = 1024) -> np.ndarray:
     t = np.arange(n) / samplerate
     return np.sin(2 * np.pi * freq * t)

@@ -363,7 +363,7 @@ class Engine:
                 tick = time.monotonic()
                 with self._lock:
                     lamp = dict(self._lamp)
-                raw = render_lamp(lamp, n, tick - t0)
+                raw = render_lamp(lamp, n, tick - t0, self.geom.points)
                 self._apply_brightness(None)
                 final = self._overlay_identify(self.device.process(raw))
                 self.device.send_raw(final)

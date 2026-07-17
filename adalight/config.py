@@ -16,7 +16,7 @@ START_CORNERS = ("top-left", "top-right", "bottom-left", "bottom-right")
 DIRECTIONS = ("cw", "ccw")
 BACKENDS = ("auto", "bettercam", "dxcam", "mss", "wfrecorder", "grim")
 MODES = ("capture", "lamp", "music")
-LAMP_EFFECTS = ("solid", "gradient", "rainbow", "rainbow_static", "breathing")
+LAMP_EFFECTS = ("solid", "gradient", "rainbow", "rainbow_static", "breathing", "fire")
 MUSIC_EFFECTS = ("spectrum", "pulse")
 
 APP_NAME = "adalight"
@@ -124,6 +124,7 @@ class Config:
     theme: str = "dark"          # dark | light | system
     preview_screen: bool = True  # показывать картинку экрана в предпросмотре
     preview_zones: bool = True   # показывать зоны сбора цвета
+    notifications: bool = True   # системные уведомления из трея
 
     @property
     def total_leds(self) -> int:

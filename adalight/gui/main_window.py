@@ -20,7 +20,16 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, QSize, Qt, QThread, QTime, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QPainter, QPixmap
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QDesktopServices,
+    QIcon,
+    QKeySequence,
+    QPainter,
+    QPixmap,
+    QShortcut,
+)
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import (
     QApplication,
@@ -97,6 +106,7 @@ _LAMP_EFFECT_LABELS = {
     "rainbow": "Радуга (бегущая)",
     "rainbow_static": "Радуга (статичная)",
     "breathing": "Дыхание",
+    "fire": "Камин",
 }
 _MUSIC_EFFECT_LABELS = {"spectrum": "Спектр по периметру", "pulse": "Пульс от баса"}
 _MAIN_MODES: tuple[Mode, ...] = ("live", "lamp", "music")
@@ -314,6 +324,7 @@ class MainWindow(QMainWindow):
         self._update_asset_url = ""
         self._update_page_url = ""
         self._update_version = ""
+        self._notified_version = ""
         self._booting = False
         self._boot_retry = 0
 
@@ -343,8 +354,18 @@ class MainWindow(QMainWindow):
         if geometry is not None:
             self.restoreGeometry(geometry)
         self.nav.setCurrentRow(int(self._settings.value("tab", 0)))
+        # показать в списке последний применённый профиль (значения уже в конфиге)
+        kind = self._settings.value("profile_kind", "")
+        name = self._settings.value("profile_name", "")
+        if kind and name:
+            self._refresh_profiles(select=(kind, name))
 
+        # проверка обновлений: сразу после запуска и далее каждые 30 минут
         QTimer.singleShot(2000, lambda: self._check_updates(silent=True))
+        self._update_check_timer = QTimer(self)
+        self._update_check_timer.setInterval(_UPDATE_RETRY_MS)
+        self._update_check_timer.timeout.connect(lambda: self._check_updates(silent=True))
+        self._update_check_timer.start()
 
     # ── построение интерфейса ─────────────────────────────────────────────
 
@@ -503,6 +524,11 @@ class MainWindow(QMainWindow):
         self.statusBar().addWidget(self.lbl_pending)
         self.statusBar().addPermanentWidget(self.btn_update_bar)
 
+        # горячие клавиши
+        QShortcut(QKeySequence("Ctrl+S"), self, activated=self._on_save)
+        QShortcut(QKeySequence("Ctrl+Q"), self, activated=self._quit)
+        btn_save.setToolTip("Сохранить как текущие настройки (Ctrl+S)")
+
     # ── статус-карточка ───────────────────────────────────────────────────
 
     def _set_hero_dot(self, color: str) -> None:
@@ -521,6 +547,11 @@ class MainWindow(QMainWindow):
             self._toast(f"Диод {index + 1} вспыхнул на ленте")
         else:
             self._toast("Запустите подсветку, чтобы подсветить диод на ленте")
+
+    def _notify(self, title: str, text: str) -> None:
+        """Системное уведомление из трея (если включено в настройках)."""
+        if self.tray is not None and self.ch_notifications.isChecked():
+            self.tray.showMessage(title, text, app_icon())
 
     def _toast(self, message: str) -> None:
         toast = QLabel(message, self)
@@ -569,6 +600,11 @@ class MainWindow(QMainWindow):
         self.cb_mode = QComboBox()
         for value in MODES:
             self.cb_mode.addItem(_MODE_LABELS[value], value)
+        self.cb_mode.setToolTip(
+            "Захват экрана — ambilight по краям картинки;\n"
+            "Лампа — эффекты без захвата; Цветомузыка — лента реагирует на звук.\n"
+            "Смена режима на лету перезапускает подсветку сразу."
+        )
         self.cb_mode.currentIndexChanged.connect(self._on_mode_changed)
         form.addRow("Режим:", self.cb_mode)
         lay.addWidget(g)
@@ -609,6 +645,10 @@ class MainWindow(QMainWindow):
 
         self.sp_fps = QSpinBox()
         self.sp_fps.setRange(1, 240)
+        self.sp_fps.setToolTip(
+            "Сколько раз в секунду обновлять ленту. 60 — комфортно;\n"
+            "реальный fps виден в статус-карточке."
+        )
         self.sp_fps.valueChanged.connect(self._on_hard_changed)
         form.addRow("Целевой FPS:", self.sp_fps)
 
@@ -690,7 +730,7 @@ class MainWindow(QMainWindow):
         effect = self.cb_lamp_effect.currentData()
         rows = {
             self.btn_lamp_color: effect in ("solid", "breathing"),
-            self._lamp_speed_w: effect in ("rainbow", "breathing"),
+            self._lamp_speed_w: effect in ("rainbow", "breathing", "fire"),
             self.gradient_editor: effect == "gradient",
         }
         for widget, visible in rows.items():
@@ -786,12 +826,16 @@ class MainWindow(QMainWindow):
         self.cb_corner = QComboBox()
         for value in START_CORNERS:
             self.cb_corner.addItem(_CORNER_LABELS[value], value)
+        self.cb_corner.setToolTip(
+            "Угол, где первый диод ленты (отмечен кольцом в предпросмотре)"
+        )
         self.cb_corner.currentIndexChanged.connect(self._on_geometry_changed)
         form.addRow("Начальный угол:", self.cb_corner)
 
         self.cb_direction = QComboBox()
         for value in DIRECTIONS:
             self.cb_direction.addItem(_DIRECTION_LABELS[value], value)
+        self.cb_direction.setToolTip("Куда идёт лента от первого диода (глядя на экран)")
         self.cb_direction.currentIndexChanged.connect(self._on_geometry_changed)
         form.addRow("Направление:", self.cb_direction)
 
@@ -822,6 +866,9 @@ class MainWindow(QMainWindow):
         form = QFormLayout(g)
 
         self.sl_gamma, row = self._slider_row(50, 320)
+        self.sl_gamma.setToolTip(
+            "Кривая яркости: 2.2 — стандарт; больше — глубже тени, сочнее"
+        )
         form.addRow("Гамма:", row)
         self.sl_bright, row = self._slider_row(5, 150)
         self.sl_bright.setToolTip(
@@ -830,8 +877,12 @@ class MainWindow(QMainWindow):
         )
         form.addRow("Яркость:", row)
         self.sl_sat, row = self._slider_row(0, 250)
+        self.sl_sat.setToolTip("1.00 — как на экране; больше — цвета сочнее")
         form.addRow("Насыщенность:", row)
         self.sl_smooth, row = self._slider_row(0, 95)
+        self.sl_smooth.setToolTip(
+            "Инерция смены цвета: 0 — мгновенно, больше — плавнее (для кино)"
+        )
         form.addRow("Сглаживание:", row)
 
         # цветовая температура — со своим форматом подписи (K)
@@ -941,6 +992,14 @@ class MainWindow(QMainWindow):
         self.ch_autostart.toggled.connect(self._on_autostart_toggled)
         lay.addWidget(self.ch_autostart)
 
+        self.ch_notifications = QCheckBox("Уведомления в трее")
+        self.ch_notifications.setToolTip(
+            "Сообщать о включении/выключении подсветки (когда окно скрыто) "
+            "и о выходе новых версий"
+        )
+        self.ch_notifications.toggled.connect(self._on_soft_changed)
+        lay.addWidget(self.ch_notifications)
+
         row = QHBoxLayout()
         btn_export = QPushButton("Экспорт настроек…")
         btn_export.setToolTip("Сохранить все настройки в JSON-файл")
@@ -992,7 +1051,11 @@ class MainWindow(QMainWindow):
         return -1
 
     def _apply_config(self, cfg: Config, source: str) -> None:
-        """Применить готовый Config: в UI, к теме и к работающему движку."""
+        """Применить готовый Config: в UI, к теме, к движку — и сохранить.
+
+        Сохранение обязательно: иначе после перезапуска (в т.ч. автозапуска)
+        программа вернётся к старым настройкам.
+        """
         self._loading = True
         self._apply_cfg_to_ui(cfg)
         self._loading = False
@@ -1000,9 +1063,11 @@ class MainWindow(QMainWindow):
         self._sync_lamp_rows()
         self._sync_music_rows()
         apply_theme(QApplication.instance(), cfg.theme)
+        cfg.save()
+        self.cfg = cfg
         if self.thread is not None:
             self._start_engine(self._selected_mode())
-        self._toast(f"{source}: настройки применены")
+        self._toast(f"{source}: применено и сохранено")
 
     def _on_profile_selected(self, index: int) -> None:
         data = self.cb_profile.itemData(index)
@@ -1021,6 +1086,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Профиль", f"Не удалось применить профиль: {e}")
             return
         self._refresh_profiles(select=(kind, name))
+        self._settings.setValue("profile_kind", kind)
+        self._settings.setValue("profile_name", name)
         self._apply_config(cfg, f"Профиль «{name}»")
 
     def _on_profile_save(self) -> None:
@@ -1097,6 +1164,7 @@ class MainWindow(QMainWindow):
         self.cb_theme = QComboBox()
         for value in _THEMES:
             self.cb_theme.addItem(_THEME_LABELS[value], value)
+        self.cb_theme.setToolTip("Применяется сразу, без перезапуска")
         self.cb_theme.currentIndexChanged.connect(self._on_theme_changed)
         form.addRow("Тема:", self.cb_theme)
         return g
@@ -1138,16 +1206,11 @@ class MainWindow(QMainWindow):
     def _check_updates(self, silent: bool = False) -> None:
         self._update_thread = UpdateCheckThread(self)
         self._update_thread.result.connect(self._on_update_result)
-        if silent:
-            # GitHub бывает недоступен (сбой, сеть) — тихо пробуем ещё раз позже
-            self._update_thread.failed.connect(self._schedule_silent_update_retry)
-        else:
+        if not silent:
+            # тихие сбои сети игнорируем — следующая попытка через 30 минут
             self._update_thread.failed.connect(self._on_update_check_failed)
             self.lbl_update.setText("Проверяю…")
         self._update_thread.start()
-
-    def _schedule_silent_update_retry(self, _message: str) -> None:
-        QTimer.singleShot(_UPDATE_RETRY_MS, lambda: self._check_updates(silent=True))
 
     def _on_update_check_failed(self, message: str) -> None:
         self.lbl_update.setText("Не удалось связаться с GitHub — попробуйте позже")
@@ -1165,6 +1228,12 @@ class MainWindow(QMainWindow):
         self.btn_update.setText(f"⬇ Обновить до v{version}")
         self.btn_update_bar.setText(f"⬇ Доступна v{version}")
         self.btn_update_bar.setVisible(True)
+        if version != self._notified_version:
+            self._notified_version = version
+            self._notify(
+                f"Доступна версия {version}",
+                "Откройте окно и нажмите кнопку обновления в правом нижнем углу.",
+            )
 
     def _start_update(self) -> None:
         if not (updates.can_self_update() and self._update_asset_url):
@@ -1176,14 +1245,15 @@ class MainWindow(QMainWindow):
         self._dl_thread = UpdateDownloadThread(
             self._update_asset_url, updates.staging_path(), self
         )
-        self._dl_thread.progress.connect(
-            lambda pct: self.btn_update.setText(
-                f"Скачивание… {pct}%" if pct >= 0 else "Скачивание…"
-            )
-        )
+        self._dl_thread.progress.connect(self._on_update_progress)
         self._dl_thread.done.connect(self._on_update_downloaded)
         self._dl_thread.failed.connect(self._on_update_failed)
         self._dl_thread.start()
+
+    def _on_update_progress(self, pct: int) -> None:
+        text = f"Скачивание… {pct}%" if pct >= 0 else "Скачивание…"
+        self.btn_update.setText(text)
+        self.btn_update_bar.setText(f"⬇ {pct}%" if pct >= 0 else "⬇ …")
 
     def _on_update_downloaded(self, path: str) -> None:
         answer = QMessageBox.question(
@@ -1195,6 +1265,7 @@ class MainWindow(QMainWindow):
             self.btn_update.setEnabled(True)
             self.btn_update_bar.setEnabled(True)
             self.btn_update.setText(f"⬇ Обновить до v{self._update_version}")
+            self.btn_update_bar.setText(f"⬇ Доступна v{self._update_version}")
             return
         self._stop_engine()
         try:
@@ -1208,6 +1279,7 @@ class MainWindow(QMainWindow):
         self.btn_update.setEnabled(True)
         self.btn_update_bar.setEnabled(True)
         self.btn_update.setText(f"⬇ Обновить до v{self._update_version}")
+        self.btn_update_bar.setText(f"⬇ Доступна v{self._update_version}")
         QMessageBox.warning(
             self,
             "Обновление",
@@ -1294,6 +1366,7 @@ class MainWindow(QMainWindow):
         self.cb_theme.setCurrentIndex(_THEMES.index(cfg.theme))
         self.ch_preview_screen.setChecked(cfg.preview_screen)
         self.ch_preview_zones.setChecked(cfg.preview_zones)
+        self.ch_notifications.setChecked(cfg.notifications)
         self.preview.show_screen = cfg.preview_screen
         self.preview.show_zones = cfg.preview_zones
 
@@ -1368,6 +1441,7 @@ class MainWindow(QMainWindow):
             theme=self.cb_theme.currentData(),
             preview_screen=self.ch_preview_screen.isChecked(),
             preview_zones=self.ch_preview_zones.isChecked(),
+            notifications=self.ch_notifications.isChecked(),
         )
 
     def _current_output(self) -> str:
@@ -1527,7 +1601,7 @@ class MainWindow(QMainWindow):
             self._start_engine(self._selected_mode())
 
     def _start_engine(self, mode: Mode) -> None:
-        self._stop_engine()
+        self._stop_engine(quiet=True)
         cfg = self._cfg_from_ui()
         try:
             cfg.validate()
@@ -1559,6 +1633,8 @@ class MainWindow(QMainWindow):
         self._fps_text = ""
         self.lbl_hero_sub.setText("Запуск…")
         self._set_hero_dot("#2ecc71")
+        if mode in _MAIN_MODES and self.isHidden():
+            self._notify("Подсветка включена", f"Режим: {names[mode]}")
         self.btn_start.setText("■ Стоп")
         self.btn_start.setStyleSheet(_BTN_STOP_QSS)
         self.btn_apply.setEnabled(mode in _MAIN_MODES)
@@ -1571,17 +1647,20 @@ class MainWindow(QMainWindow):
         self._backend_info = name
         self._update_hero_sub()
 
-    def _stop_engine(self) -> None:
+    def _stop_engine(self, quiet: bool = False) -> None:
         self._cancel_pending_apply()
         thread, self.thread = self.thread, None
         if thread is None:
             return
         thread.request_stop()
         thread.wait(8000)
-        self._reset_running_ui()
+        self._reset_running_ui(notify=not quiet)
 
-    def _reset_running_ui(self) -> None:
+    def _reset_running_ui(self, notify: bool = True) -> None:
+        prev_mode = self._mode
         self._mode = None
+        if notify and prev_mode in _MAIN_MODES and self.isHidden():
+            self._notify("Подсветка выключена", "Лента погашена.")
         self.lbl_state.setText("Остановлено")
         self.lbl_hero_sub.setText("Нажмите «Старт», чтобы включить подсветку")
         self._set_hero_dot("#6a6d73")

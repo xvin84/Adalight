@@ -74,12 +74,20 @@ def apply_and_restart(new_file: Path) -> None:
     """
     current = Path(sys.executable).resolve()
     if sys.platform == "win32":
-        # заменить работающий exe нельзя — делает отложенный bat после выхода
+        # заменить работающий exe нельзя — bat ждёт, пока процесс отпустит файл,
+        # и только потом запускает новую версию (фиксированная пауза давала гонку:
+        # новый процесс стартовал, пока старый ещё чистил свой Temp\_MEI)
         script = current.with_name("adalight_update.bat")
         script.write_text(
             "@echo off\n"
-            "timeout /t 2 /nobreak >nul\n"
-            f'move /y "{new_file}" "{current}" >nul\n'
+            "set /a tries=0\n"
+            ":retry\n"
+            "set /a tries+=1\n"
+            "timeout /t 1 /nobreak >nul\n"
+            f'move /y "{new_file}" "{current}" >nul 2>&1\n'
+            "if not errorlevel 1 goto done\n"
+            "if %tries% lss 60 goto retry\n"
+            ":done\n"
             f'start "" "{current}"\n'
             'del "%~f0"\n',
             encoding="mbcs",

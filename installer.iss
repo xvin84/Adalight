@@ -24,6 +24,9 @@ UninstallDisplayIcon={app}\Adalight.exe
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+; закрыть работающий Adalight перед установкой, иначе exe заблокирован
+CloseApplications=yes
+RestartApplications=no
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"

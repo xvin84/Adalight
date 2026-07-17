@@ -27,8 +27,10 @@ layout, and a tray icon so the lighting keeps running with the window closed.
   bright ones, with min/max bounds and reaction speed.
 - **Autostart**: launch on login minimized to tray with lighting on
   (Windows registry / XDG autostart).
-- **Lamp mode**: solid color / gradient / rainbow / breathing — the strip works
-  without screen capture.
+- **Lamp mode**: solid color / gradient / rainbows / breathing / **fireplace**
+  (a hearth at the bottom-center with sparks) — the strip works without screen capture.
+- **Tray notifications**: lighting on/off (when the window is hidden) and new
+  version releases (checked every 30 minutes); can be disabled in System.
 - **Music mode**: system loopback audio drives the LEDs — a perimeter spectrum
   or a bass-driven pulse, with adjustable sensitivity.
 - **Night mode**: one button makes everything warmer (3400K), dimmer (×0.6)
