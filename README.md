@@ -11,6 +11,10 @@ Runs on **Windows** (DXGI Desktop Duplication via `dxcam`, `mss` fallback) and
 Qt (PySide6) GUI: every setting in one window, a live preview of the LED
 layout, and a tray icon so the lighting keeps running with the window closed.
 
+![Adalight main window](assets/screenshots/main-dark.png)
+
+![Plugins: notification flashes and catalog](assets/screenshots/plugins-dark.png)
+
 ## Features
 
 - Serial port with autodetection, baud rate, **channel order** (RGB/GRB/BGR/…) —
