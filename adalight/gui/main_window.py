@@ -335,6 +335,7 @@ class MainWindow(QMainWindow):
         self._update_asset_url = ""
         self._update_page_url = ""
         self._update_version = ""
+        self._update_ready_path: Path | None = None
         self._notified_version = ""
         self._booting = False
         self._boot_retry = 0
@@ -1320,6 +1321,10 @@ class MainWindow(QMainWindow):
             # из исходников или без бинарника под эту ОС — открываем страницу релиза
             QDesktopServices.openUrl(QUrl(self._update_page_url))
             return
+        if self._update_ready_path is not None and self._update_ready_path.is_file():
+            # уже скачано — не качаем повторно, сразу предлагаем перезапуск
+            self._confirm_and_restart()
+            return
         self.btn_update.setEnabled(False)
         self.btn_update_bar.setEnabled(False)
         self._dl_thread = UpdateDownloadThread(
@@ -1336,21 +1341,28 @@ class MainWindow(QMainWindow):
         self.btn_update_bar.setText(f"⬇ {pct}%" if pct >= 0 else "⬇ …")
 
     def _on_update_downloaded(self, path: str) -> None:
+        self._update_ready_path = Path(path)
+        self._confirm_and_restart()
+
+    def _confirm_and_restart(self) -> None:
         answer = QMessageBox.question(
             self,
             "Обновление",
             f"Версия {self._update_version} скачана.\nПерезапустить приложение сейчас?",
         )
         if answer != QMessageBox.StandardButton.Yes:
+            # файл сохранён — при следующем клике перезапустим без скачивания
             self.btn_update.setEnabled(True)
             self.btn_update_bar.setEnabled(True)
-            self.btn_update.setText(f"⬇ Обновить до v{self._update_version}")
-            self.btn_update_bar.setText(f"⬇ Доступна v{self._update_version}")
+            self.btn_update.setText(f"↻ Перезапустить для v{self._update_version}")
+            self.btn_update_bar.setText(f"↻ v{self._update_version} готова")
+            self._toast("Обновление скачано — перезапустите, когда будет удобно")
             return
         self._stop_engine()
         try:
-            updates.apply_and_restart(Path(path))
+            updates.apply_and_restart(self._update_ready_path)
         except OSError as e:
+            self._update_ready_path = None
             self._on_update_failed(str(e))
             return
         self._quit()
