@@ -47,9 +47,13 @@ def default_config_path() -> Path:
 @dataclass
 class Config:
     # Железо
+    transport: str = "serial"  # serial | wled
     port: str = "COM3" if sys.platform == "win32" else "/dev/ttyUSB0"
     baud: int = 115200
     color_order: str = "RGB"  # порядок каналов, ожидаемый лентой/прошивкой
+    # WLED (лента на ESP по Wi-Fi, UDP-протокол DRGB/DNRGB)
+    wled_host: str = ""
+    wled_port: int = 21324
 
     # Монитор ("" = первый/основной)
     output: str = ""
@@ -125,17 +129,27 @@ class Config:
     music_color: str = "#ff2d95"
     music_gain: float = 1.0  # 0.1..5
 
+    # Плагины: {имя: {"enabled": bool, ...настройки плагина}}
+    plugins: dict = field(default_factory=dict)
+
     # Внешний вид
     theme: str = "dark"          # dark | light | system
     preview_screen: bool = True  # показывать картинку экрана в предпросмотре
     preview_zones: bool = True   # показывать зоны сбора цвета
     notifications: bool = True   # системные уведомления из трея
+    auto_update: bool = False    # при запуске тихо скачать и установить обновление
 
     @property
     def total_leds(self) -> int:
         return self.leds_top + self.leds_right + self.leds_bottom + self.leds_left
 
     def validate(self) -> None:
+        if self.transport not in ("serial", "wled"):
+            raise ValueError(f"Неверный транспорт: {self.transport!r}")
+        if self.transport == "wled" and not self.wled_host.strip():
+            raise ValueError("Укажите адрес WLED-устройства (IP или имя хоста)")
+        if not 1 <= self.wled_port <= 65535:
+            raise ValueError("Неверный порт WLED")
         if sorted(self.color_order) != sorted("RGB"):
             raise ValueError(f"Неверный порядок каналов: {self.color_order!r}")
         if self.start_corner not in START_CORNERS:

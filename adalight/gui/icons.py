@@ -56,6 +56,8 @@ _BODIES: dict[str, str] = {
     "wand": '<path d="M6 3v4M4 5h4M17.5 14.5v4M15.5 16.5h4M19 3l-1 2M20 8l2-1M18.5 18.5'
             'M14.2 6.8 3 18l3 3L17.2 9.8z"/>',
     "play": '<path d="M7 4.5v15l12-7.5z"/>',
+    "plug": '<path d="M9 3v5M15 3v5"/>'
+            '<path d="M6.5 8h11v3.5a5.5 5.5 0 0 1-11 0z"/><path d="M12 17v4"/>',
     "flash": '<path d="M13 2 4.5 13.5H11L9.5 22 18 10.5h-6.5z"/>',
 }
 

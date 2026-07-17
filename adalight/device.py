@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import math
+import socket
 import time
 
 import numpy as np
 import serial
 
 from .config import Config
+
+# WLED realtime-протоколы (https://kno.wled.ge/interfaces/udp-realtime/)
+WLED_DRGB = 2       # до 490 диодов одним пакетом
+WLED_DNRGB = 4      # с оффсетом, для длинных лент
+WLED_TIMEOUT_S = 255  # 255 = не возвращаться к встроенным эффектам, пока идут пакеты
+_DNRGB_CHUNK = 489
 
 
 class DeviceError(RuntimeError):
@@ -73,6 +80,8 @@ class AdalightDevice:
     def __init__(self, cfg: Config):
         self.cfg = cfg
         self.ser: serial.Serial | None = None
+        self._sock: socket.socket | None = None
+        self._wled_addr: tuple[str, int] | None = None
         self._header = build_header(cfg.total_leds)
         self._order = color_order_indices(cfg.color_order)
         self._gamma = cfg.gamma
@@ -110,6 +119,16 @@ class AdalightDevice:
             self._lut = build_gamma_lut(self._gamma, self._brightness, self._black_threshold)
 
     def connect(self) -> None:
+        if self.cfg.transport == "wled":
+            try:
+                host = socket.gethostbyname(self.cfg.wled_host.strip())
+            except OSError as e:
+                raise DeviceError(
+                    f"WLED-хост {self.cfg.wled_host!r} не найден: {e}"
+                ) from e
+            self._wled_addr = (host, self.cfg.wled_port)
+            self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            return
         try:
             self.ser = serial.Serial(self.cfg.port, self.cfg.baud, timeout=1)
         except serial.SerialException as e:
@@ -124,7 +143,13 @@ class AdalightDevice:
                 time.sleep(0.1)
             finally:
                 self.ser.close()
+        if self._sock is not None:
+            try:
+                self.clear()
+            finally:
+                self._sock.close()
         self.ser = None
+        self._sock = None
 
     def process(self, colors: np.ndarray) -> np.ndarray:
         """Цветокоррекция: насыщенность + гамма/яркость (через LUT). Вход и выход — RGB."""
@@ -136,16 +161,40 @@ class AdalightDevice:
         return self._lut[(c * 255.0).astype(np.uint8)]
 
     def send_raw(self, colors: np.ndarray) -> None:
-        """Отправка RGB-массива (N, 3) как есть, с учётом порядка каналов ленты."""
+        """Отправка RGB-массива (N, 3) как есть.
+
+        Serial: заголовок Adalight + порядок каналов ленты.
+        WLED: UDP DRGB/DNRGB (порядок каналов WLED применяет сам)."""
+        data8 = np.clip(colors, 0, 255).astype(np.uint8)
+        if self.cfg.transport == "wled":
+            self._send_wled(data8)
+            return
         if self.ser is None:
             return
-        data = np.ascontiguousarray(
-            np.clip(colors, 0, 255).astype(np.uint8)[:, self._order]
-        )
+        data = np.ascontiguousarray(data8[:, self._order])
         try:
             self.ser.write(self._header + data.tobytes())
         except serial.SerialException as e:
             raise DeviceError(f"Ошибка записи в порт {self.cfg.port}: {e}") from e
+
+    def _send_wled(self, data: np.ndarray) -> None:
+        if self._sock is None or self._wled_addr is None:
+            return
+        payload = np.ascontiguousarray(data).tobytes()
+        try:
+            if len(data) <= 490:
+                self._sock.sendto(
+                    bytes((WLED_DRGB, WLED_TIMEOUT_S)) + payload, self._wled_addr
+                )
+            else:
+                for start in range(0, len(data), _DNRGB_CHUNK):
+                    chunk = payload[start * 3 : (start + _DNRGB_CHUNK) * 3]
+                    header = bytes(
+                        (WLED_DNRGB, WLED_TIMEOUT_S, (start >> 8) & 0xFF, start & 0xFF)
+                    )
+                    self._sock.sendto(header + chunk, self._wled_addr)
+        except OSError as e:
+            raise DeviceError(f"Ошибка отправки на WLED {self.cfg.wled_host}: {e}") from e
 
     def send_processed(self, colors: np.ndarray) -> np.ndarray:
         """Применяет цветокоррекцию, отправляет и возвращает итоговые RGB-цвета."""

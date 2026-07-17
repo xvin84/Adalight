@@ -55,6 +55,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
@@ -95,6 +96,7 @@ from ..config import (
 )
 from ..device import list_serial_ports
 from ..engine import Engine, Mode
+from ..plugins import PluginAPI, PluginManager
 from ..schedule import parse_time
 from .anim import fade_in, fade_out_and_delete, make_pulse, slide_fade_in
 from .gradient import GradientEditor
@@ -196,6 +198,10 @@ class EngineThread(QThread):
     def identify(self, index: int) -> None:
         if self._engine is not None:
             self._engine.identify(index)
+
+    def add_overlay(self, *args, **kwargs) -> None:
+        if self._engine is not None:
+            self._engine.add_overlay(*args, **kwargs)
 
 
 class UpdateCheckThread(QThread):
@@ -321,6 +327,8 @@ def app_icon() -> QIcon:
 
 
 class MainWindow(QMainWindow):
+    pluginNotify = Signal(str, str)  # мост: уведомления из потоков плагинов в GUI
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"Adalight {__version__}")
@@ -337,6 +345,8 @@ class MainWindow(QMainWindow):
         self._update_version = ""
         self._update_ready_path: Path | None = None
         self._notified_version = ""
+        self._startup_check = True   # первый чек после запуска — можно автообновляться
+        self._auto_updating = False
         self._booting = False
         self._boot_retry = 0
 
@@ -352,12 +362,23 @@ class MainWindow(QMainWindow):
         self._apply_timer.setInterval(1000)
         self._apply_timer.timeout.connect(self._tick_apply)
 
+        # плагины: API-мост создаётся до UI, вкладка «Плагины» строится по списку
+        self.pluginNotify.connect(self._notify)
+        self.plugin_manager = PluginManager(
+            PluginAPI(
+                flash=self._plugin_flash,
+                notify=lambda title, text: self.pluginNotify.emit(title, text),
+            )
+        )
+        self._plugin_checks: dict[str, QCheckBox] = {}
+
         self._build_ui()
         self._apply_cfg_to_ui(self.cfg)
         self._refresh_profiles()
         self._build_tray()
         self._loading = False
         self._refresh_preview_layout()
+        self.plugin_manager.apply(self.cfg.plugins)
 
         # восстановление геометрии окна и активной вкладки
         self._settings = QSettings("xvin84", "Adalight")
@@ -399,6 +420,7 @@ class MainWindow(QMainWindow):
             ("chip", "Устройство"),
             ("sliders", "Изображение"),
             ("sun", "Яркость"),
+            ("plug", "Плагины"),
             ("gear", "Система"),
         )
         for icon_name, label in sections:
@@ -409,6 +431,7 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(self._make_tab(self._group_connection(), self._group_leds()))
         self.pages.addWidget(self._make_tab(self._group_image()))
         self.pages.addWidget(self._make_tab(self._group_adaptive(), self._group_schedule()))
+        self.pages.addWidget(self._make_tab(*self._plugin_groups()))
         self.pages.addWidget(
             self._make_tab(
                 self._group_appearance(), self._group_system(), self._group_updates()
@@ -825,12 +848,25 @@ class MainWindow(QMainWindow):
         if color.isValid():
             self._set_button_color(btn, color.name())
             self._on_soft_changed()
+            self._on_plugins_changed()  # no-op, если настройки плагинов не менялись
 
     # ── вкладка «Устройство» ──────────────────────────────────────────────
 
     def _group_connection(self) -> QGroupBox:
         g = QGroupBox("Подключение")
         form = QFormLayout(g)
+        self._conn_form = form
+
+        self.cb_transport = QComboBox()
+        self.cb_transport.addItem("Serial (Adalight)", "serial")
+        self.cb_transport.addItem("WLED по Wi-Fi (beta)", "wled")
+        self.cb_transport.setToolTip(
+            "Serial — Arduino/ESP по USB.\n"
+            "WLED — лента на ESP с прошивкой WLED, по сети (UDP DRGB), "
+            "порядок каналов WLED применяет сам."
+        )
+        self.cb_transport.currentIndexChanged.connect(self._on_transport_changed)
+        form.addRow("Транспорт:", self.cb_transport)
 
         self.cb_port = QComboBox()
         self.cb_port.setEditable(True)
@@ -843,7 +879,20 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout()
         row.addWidget(self.cb_port, 1)
         row.addWidget(btn)
-        form.addRow("Порт:", row)
+        self._port_row_w = self._wrap_row(row)
+        form.addRow("Порт:", self._port_row_w)
+
+        self.ed_wled_host = QLineEdit()
+        self.ed_wled_host.setPlaceholderText("например, 192.168.1.42 или wled.local")
+        self.ed_wled_host.textChanged.connect(self._on_hard_changed)
+        form.addRow("Адрес WLED:", self.ed_wled_host)
+
+        self.sp_wled_port = QSpinBox()
+        self.sp_wled_port.setRange(1, 65535)
+        self.sp_wled_port.setValue(21324)
+        self.sp_wled_port.setToolTip("Стандартный realtime-порт WLED — 21324")
+        self.sp_wled_port.valueChanged.connect(self._on_hard_changed)
+        form.addRow("Порт WLED:", self.sp_wled_port)
 
         self.cb_baud = QComboBox()
         self.cb_baud.setEditable(True)
@@ -860,7 +909,28 @@ class MainWindow(QMainWindow):
         self.cb_order.setToolTip("Порядок каналов ленты: WS2812 обычно GRB")
         self.cb_order.currentIndexChanged.connect(self._on_hard_changed)
         form.addRow("Порядок цвета:", self.cb_order)
+
+        self._sync_transport_rows()
         return g
+
+    def _on_transport_changed(self, *args) -> None:
+        self._sync_transport_rows()
+        self._on_hard_changed()
+
+    def _sync_transport_rows(self) -> None:
+        serial_mode = self.cb_transport.currentData() != "wled"
+        rows = {
+            self._port_row_w: serial_mode,
+            self.cb_baud: serial_mode,
+            self.cb_order: serial_mode,
+            self.ed_wled_host: not serial_mode,
+            self.sp_wled_port: not serial_mode,
+        }
+        for widget, visible in rows.items():
+            label = self._conn_form.labelForField(widget)
+            if label is not None:
+                label.setVisible(visible)
+            widget.setVisible(visible)
 
     def _group_leds(self) -> QGroupBox:
         g = QGroupBox("Светодиоды")
@@ -1261,6 +1331,114 @@ class MainWindow(QMainWindow):
             return
         self._apply_config(cfg, "Импорт")
 
+    # ── вкладка «Плагины» ─────────────────────────────────────────────────
+
+    def _plugin_groups(self) -> list[QWidget]:
+        groups: list[QWidget] = []
+        intro = QLabel(
+            "Плагины расширяют Adalight. Свои плагины кладите в папку "
+            "plugins рядом с конфигом — файл .py с функцией create_plugin()."
+        )
+        intro.setWordWrap(True)
+        groups.append(intro)
+        for loaded in self.plugin_manager.plugins:
+            g = QGroupBox(loaded.title)
+            lay = QVBoxLayout(g)
+            desc = QLabel(loaded.description or loaded.name)
+            desc.setWordWrap(True)
+            lay.addWidget(desc)
+            if loaded.error:
+                err = QLabel(f"⚠ Ошибка: {loaded.error}")
+                err.setWordWrap(True)
+                lay.addWidget(err)
+                groups.append(g)
+                continue
+            check = QCheckBox("Включён")
+            check.toggled.connect(self._on_plugins_changed)
+            self._plugin_checks[loaded.name] = check
+            lay.addWidget(check)
+            if loaded.name == "notifications":
+                lay.addLayout(self._notifications_settings())
+            groups.append(g)
+        return groups
+
+    def _notifications_settings(self) -> QFormLayout:
+        form = QFormLayout()
+
+        self.sl_flash_x, row = self._plugin_slider_row(0, 100)
+        self.sl_flash_x.setToolTip("Где по горизонтали: 0 — левый край, 1 — правый")
+        form.addRow("Позиция X:", row)
+        self.sl_flash_y, row = self._plugin_slider_row(0, 100)
+        self.sl_flash_y.setToolTip("Где по вертикали: 0 — верх, 1 — низ")
+        form.addRow("Позиция Y:", row)
+        self.sl_flash_radius, row = self._plugin_slider_row(5, 60)
+        self.sl_flash_radius.setToolTip("Размер пятна вспышки")
+        form.addRow("Радиус:", row)
+
+        self.btn_flash_telegram = self._color_button("#4fc3f7")
+        form.addRow("Telegram:", self.btn_flash_telegram)
+        self.btn_flash_discord = self._color_button("#7c4dff")
+        form.addRow("Discord:", self.btn_flash_discord)
+
+        btn_test = QPushButton("Тест вспышки")
+        btn_test.setToolTip("Показать вспышку на ленте (подсветка должна работать)")
+        btn_test.clicked.connect(self._on_flash_test)
+        form.addRow(btn_test)
+        return form
+
+    def _plugin_slider_row(self, lo: int, hi: int) -> tuple[QSlider, QHBoxLayout]:
+        s = QSlider(Qt.Orientation.Horizontal)
+        s.setRange(lo, hi)
+        label = QLabel()
+        label.setFixedWidth(38)
+        s.valueChanged.connect(lambda v: label.setText(f"{v / 100:.2f}"))
+        s.valueChanged.connect(self._on_plugins_changed)
+        row = QHBoxLayout()
+        row.addWidget(s, 1)
+        row.addWidget(label)
+        return s, row
+
+    def _plugins_cfg_from_ui(self) -> dict:
+        out = dict(self.cfg.plugins)  # настройки плагинов, которых нет в UI, сохраняем
+        for name, check in self._plugin_checks.items():
+            entry = dict(out.get(name, {}))
+            entry["enabled"] = check.isChecked()
+            if name == "notifications":
+                entry.update(
+                    x=self.sl_flash_x.value() / 100,
+                    y=self.sl_flash_y.value() / 100,
+                    radius=self.sl_flash_radius.value() / 100,
+                    telegram_color=self.btn_flash_telegram.property("color_value"),
+                    discord_color=self.btn_flash_discord.property("color_value"),
+                )
+            out[name] = entry
+        return out
+
+    def _on_plugins_changed(self, *args) -> None:
+        if self._loading:
+            return
+        self._update_profile_dirty()
+        self.plugin_manager.apply(self._plugins_cfg_from_ui())
+
+    def _on_flash_test(self) -> None:
+        if self.thread is None or self._mode not in _MAIN_MODES:
+            self._toast("Запустите подсветку, чтобы увидеть вспышку")
+            return
+        self.thread.add_overlay(
+            self.btn_flash_telegram.property("color_value"),
+            self.sl_flash_x.value() / 100,
+            self.sl_flash_y.value() / 100,
+            self.sl_flash_radius.value() / 100,
+        )
+
+    def _plugin_flash(
+        self, color: str, x: float, y: float, radius: float, duration: float
+    ) -> None:
+        """Зовётся из потоков плагинов: только чистый python, без Qt-объектов."""
+        thread = self.thread
+        if thread is not None:
+            thread.add_overlay(color, x, y, radius, duration)
+
     def _group_appearance(self) -> QGroupBox:
         g = QGroupBox("Внешний вид")
         form = QFormLayout(g)
@@ -1290,6 +1468,13 @@ class MainWindow(QMainWindow):
         lay = QVBoxLayout(g)
         self.lbl_update = QLabel(f"Текущая версия: {__version__}")
         lay.addWidget(self.lbl_update)
+        self.ch_auto_update = QCheckBox("Обновляться автоматически при запуске")
+        self.ch_auto_update.setToolTip(
+            "Если при старте программы найдена новая версия — она тихо скачается "
+            "и установится с перезапуском (уведомление придёт в трей)."
+        )
+        self.ch_auto_update.toggled.connect(self._on_soft_changed)
+        lay.addWidget(self.ch_auto_update)
         self.btn_update = QPushButton("Проверить обновления")
         self.btn_update.clicked.connect(self._on_update_button)
         lay.addWidget(self.btn_update)
@@ -1331,6 +1516,22 @@ class MainWindow(QMainWindow):
         self.btn_update.setText(f"⬇ Обновить до v{version}")
         self.btn_update_bar.setText(f"⬇ Доступна v{version}")
         self.btn_update_bar.setVisible(True)
+
+        # автообновление: только при первом чеке после запуска, чтобы не
+        # выдёргивать программу из-под пользователя посреди работы
+        if (
+            self._startup_check
+            and self.ch_auto_update.isChecked()
+            and updates.can_self_update()
+            and asset_url
+        ):
+            self._startup_check = False
+            self._auto_updating = True
+            self._notify(f"Обновляюсь до версии {version}", "Программа перезапустится сама.")
+            self._start_update()
+            return
+        self._startup_check = False
+
         if version != self._notified_version:
             self._notified_version = version
             self._notify(
@@ -1364,6 +1565,17 @@ class MainWindow(QMainWindow):
 
     def _on_update_downloaded(self, path: str) -> None:
         self._update_ready_path = Path(path)
+        if self._auto_updating:
+            # тихий сценарий: без вопросов — сразу перезапуск в новую версию
+            self._stop_engine(quiet=True)
+            try:
+                updates.apply_and_restart(self._update_ready_path)
+            except OSError as e:
+                self._auto_updating = False
+                self._on_update_failed(str(e))
+                return
+            self._quit()
+            return
         self._confirm_and_restart()
 
     def _confirm_and_restart(self) -> None:
@@ -1390,6 +1602,7 @@ class MainWindow(QMainWindow):
         self._quit()
 
     def _on_update_failed(self, message: str) -> None:
+        self._auto_updating = False
         self.btn_update.setEnabled(True)
         self.btn_update_bar.setEnabled(True)
         self.btn_update.setText(f"⬇ Обновить до v{self._update_version}")
@@ -1446,9 +1659,22 @@ class MainWindow(QMainWindow):
 
     def _apply_cfg_to_ui(self, cfg: Config) -> None:
         self._refresh_ports()
+        self.cb_transport.setCurrentIndex(0 if cfg.transport == "serial" else 1)
         self.cb_port.setCurrentText(cfg.port)
         self.cb_baud.setCurrentText(str(cfg.baud))
         self.cb_order.setCurrentText(cfg.color_order)
+        self.ed_wled_host.setText(cfg.wled_host)
+        self.sp_wled_port.setValue(cfg.wled_port)
+        self._sync_transport_rows()
+
+        notif = {**self.plugin_manager_defaults(), **cfg.plugins.get("notifications", {})}
+        for name, check in self._plugin_checks.items():
+            check.setChecked(bool(cfg.plugins.get(name, {}).get("enabled", False)))
+        self.sl_flash_x.setValue(round(float(notif["x"]) * 100))
+        self.sl_flash_y.setValue(round(float(notif["y"]) * 100))
+        self.sl_flash_radius.setValue(round(float(notif["radius"]) * 100))
+        self._set_button_color(self.btn_flash_telegram, notif["telegram_color"])
+        self._set_button_color(self.btn_flash_discord, notif["discord_color"])
 
         self.sp_top.setValue(cfg.leds_top)
         self.sp_right.setValue(cfg.leds_right)
@@ -1481,6 +1707,7 @@ class MainWindow(QMainWindow):
         self.ch_preview_screen.setChecked(cfg.preview_screen)
         self.ch_preview_zones.setChecked(cfg.preview_zones)
         self.ch_notifications.setChecked(cfg.notifications)
+        self.ch_auto_update.setChecked(cfg.auto_update)
         self.preview.show_screen = cfg.preview_screen
         self.preview.show_zones = cfg.preview_zones
 
@@ -1513,8 +1740,17 @@ class MainWindow(QMainWindow):
                 str(rule.get("brightness", "")),
             )
 
+    def plugin_manager_defaults(self) -> dict:
+        from ..plugins.builtin.notifications import DEFAULT_SETTINGS
+
+        return dict(DEFAULT_SETTINGS)
+
     def _cfg_from_ui(self) -> Config:
         return Config(
+            transport=self.cb_transport.currentData(),
+            wled_host=self.ed_wled_host.text().strip(),
+            wled_port=self.sp_wled_port.value(),
+            plugins=self._plugins_cfg_from_ui(),
             port=self.cb_port.currentText().strip(),
             baud=int(self.cb_baud.currentText() or 115200),
             color_order=self.cb_order.currentText(),
@@ -1562,6 +1798,7 @@ class MainWindow(QMainWindow):
             preview_screen=self.ch_preview_screen.isChecked(),
             preview_zones=self.ch_preview_zones.isChecked(),
             notifications=self.ch_notifications.isChecked(),
+            auto_update=self.ch_auto_update.isChecked(),
         )
 
     def _current_output(self) -> str:
@@ -1940,6 +2177,7 @@ class MainWindow(QMainWindow):
                 )
             return
         self._stop_engine()
+        self.plugin_manager.stop_all()
         if self.tray is not None:
             self.tray.hide()
         event.accept()

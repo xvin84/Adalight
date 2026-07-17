@@ -38,7 +38,15 @@ layout, and a tray icon so the lighting keeps running with the window closed.
 - **Color pipeline**: color temperature (white balance) and a shadow noise
   cut-off so dark scenes don't make the LEDs glow with noise.
 - **Auto-update**: the app checks GitHub Releases, downloads the new binary and
-  restarts itself — no manual downloading.
+  restarts itself — no manual downloading; with "update automatically" enabled
+  new versions install silently at startup.
+- **Plugins**: an extension system — drop .py files with `create_plugin()` into
+  `<config>/plugins/`; the API provides strip flashes and tray notifications.
+- **Notification flashes** (built-in plugin): Telegram — a blue flash,
+  Discord — purple, at any point of the perimeter, over any mode.
+  Windows requires notification-access permission.
+- **WLED transport (beta)**: an ESP strip running WLED over Wi-Fi
+  (UDP DRGB/DNRGB, port 21324) — no wire, no baud-rate cap.
 - **Modern UI**: sidebar navigation with SVG icons, a status card
   (state · backend · fps), live preview with the captured screen and sampling
   zones — **clicking an LED in the preview flashes it on the real strip**;
@@ -120,11 +128,11 @@ uv run main.py --list-ports
 ## Roadmap
 
 - [x] **Settings profiles** ("Movie", "Game", "Work") with quick switching from the tray
-- [ ] **WLED-UDP transport** — ESP strip over Wi-Fi, no wire and no baud-rate cap
-- [ ] **Notification integrations** — a corner color flash: Telegram blue, Discord purple
+- [x] **WLED-UDP transport** — ESP strip over Wi-Fi, no wire and no baud-rate cap (beta)
+- [x] **Notification integrations** — a color flash: Telegram blue, Discord purple
+- [x] **Plugin system** — custom effects and integrations without rebuilding (first API)
 - [ ] **More music effects** (bass waves, beat flashes)
 - [ ] **Multi-monitor** — independent strip segments across screens
-- [ ] **Plugin system** — custom effects and integrations without rebuilding
 - [ ] **xdg-desktop-portal / PipeWire capture** — GNOME and KDE support on Wayland
 - [ ] **English UI localization**
 - [ ] **macOS build** (a tester with a Mac is welcome)

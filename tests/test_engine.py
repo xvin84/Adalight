@@ -185,14 +185,50 @@ def test_identify_flashes_single_led():
         time.sleep(0.01)
     engine.identify(3)
     seen = len(fake_serial.frames)
-    while len(fake_serial.frames) < seen + 2 and time.time() < deadline:
+    # пик конверта вспышки — на ~12% длительности, ждём достаточно кадров
+    while len(fake_serial.frames) < seen + 40 and time.time() < deadline:
         time.sleep(0.01)
     engine.stop()
     t.join(timeout=5.0)
 
-    colors = np.frombuffer(fake_serial.frames[-2][6:], np.uint8).reshape(-1, 3)
-    assert np.array_equal(colors[3], (255, 255, 255))  # выбранный диод — белый
-    assert colors[0].max() < 50                        # остальные — тёмные
+    # берём самый яркий кадр вспышки (конверт разгорается и затухает)
+    frames = [
+        np.frombuffer(f[6:], np.uint8).reshape(-1, 3) for f in fake_serial.frames[seen:-1]
+    ]
+    best = max(frames, key=lambda c: int(c[3].sum()))
+    assert best[3].min() > 120                     # выбранный диод вспыхнул белым
+    assert best[3].sum() > best[0].sum() * 3       # заметно ярче остальных
+    assert best[0].max() < 50
+
+
+def test_add_overlay_lights_target_area():
+    cfg = make_cfg(target_fps=120)
+    fake_serial = FakeSerial()
+    engine = Engine(cfg, backend_factory=lambda _: FakeBackend(color=(0, 0, 0)))
+    engine.device.connect = lambda: setattr(engine.device, "ser", fake_serial)
+
+    t = threading.Thread(target=engine.run, args=("live",))
+    t.start()
+    deadline = time.time() + 5.0
+    while len(fake_serial.frames) < 2 and time.time() < deadline:
+        time.sleep(0.01)
+    # вспышка в правом нижнем углу
+    engine.add_overlay("#00ff00", x=1.0, y=1.0, radius=0.3, duration=1.0)
+    seen = len(fake_serial.frames)
+    while len(fake_serial.frames) < seen + 40 and time.time() < deadline:
+        time.sleep(0.01)
+    engine.stop()
+    t.join(timeout=5.0)
+
+    frames = [
+        np.frombuffer(f[6:], np.uint8).reshape(-1, 3) for f in fake_serial.frames[seen:-1]
+    ]
+    best = max(frames, key=lambda c: int(c[:, 1].sum()))
+    points = engine.geom.points
+    near = [i for i, (_, x, y) in enumerate(points) if np.hypot(x - 1, y - 1) < 0.2]
+    far = [i for i, (_, x, y) in enumerate(points) if np.hypot(x - 1, y - 1) > 0.8]
+    assert best[near, 1].mean() > 60                    # у угла — зелёная вспышка
+    assert best[near, 1].mean() > best[far, 1].mean() * 3  # далёкие почти не тронуты
 
 
 def test_band_rects_and_localize_roundtrip():

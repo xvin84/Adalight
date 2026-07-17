@@ -17,7 +17,7 @@ from typing import Literal
 import numpy as np
 
 from .capture import create_backend
-from .config import Config
+from .config import Config, parse_hex_color
 from .device import AdalightDevice
 from .effects import MusicRenderer, render_lamp
 from .geometry import LedGeometry, Slice
@@ -121,24 +121,60 @@ class Engine:
 
         self._lum_smoothed = 0.5  # сглаженная яркость сцены 0..1
         self._applied_brightness: float | None = None
-        self._identify: tuple[int, float] | None = None  # (диод, до какого времени)
+        self._overlays: list[dict] = []  # вспышки поверх любого режима
         self._apply_color_temp()
+
+    # ── оверлеи: вспышки поверх текущих цветов (плагины, identify) ────────
+
+    def add_overlay(
+        self,
+        color: str,
+        x: float,
+        y: float,
+        radius: float = 0.25,
+        duration: float = 1.5,
+    ) -> None:
+        """Вспышка цветом в точке (x, y) нормированного экрана, затухает за duration.
+
+        Потокобезопасно: зовётся из GUI и из потоков плагинов.
+        """
+        rgb = np.array(parse_hex_color(color), dtype=np.float64)
+        dist = np.array(
+            [np.hypot(px - x, py - y) for _, px, py in self.geom.points]
+        )
+        weights = np.exp(-((dist / max(radius, 0.02)) ** 2))
+        self._push_overlay(rgb, weights, duration)
 
     def identify(self, index: int, duration: float = 1.5) -> None:
         """Вспыхнуть белым одним диодом — чтобы найти его на ленте."""
-        self._identify = (int(index), time.monotonic() + duration)
+        weights = np.zeros(self.cfg.total_leds)
+        if 0 <= index < len(weights):
+            weights[index] = 1.0
+        self._push_overlay(np.array([255.0, 255.0, 255.0]), weights, duration)
 
-    def _overlay_identify(self, colors: np.ndarray) -> np.ndarray:
-        ident = self._identify
-        if ident is None:
+    def _push_overlay(self, rgb: np.ndarray, weights: np.ndarray, duration: float) -> None:
+        with self._lock:
+            self._overlays.append(
+                {"rgb": rgb, "w": weights, "t0": time.monotonic(), "dur": duration}
+            )
+
+    def _apply_overlays(self, colors: np.ndarray) -> np.ndarray:
+        if not self._overlays:
             return colors
-        index, until = ident
-        if time.monotonic() > until:
-            self._identify = None
+        now = time.monotonic()
+        with self._lock:
+            self._overlays = [o for o in self._overlays if now - o["t0"] < o["dur"]]
+            active = list(self._overlays)
+        if not active:
             return colors
-        if 0 <= index < len(colors):
-            colors[index] = (255, 255, 255)
-        return colors
+        out = colors.astype(np.float64)
+        for o in active:
+            progress = (now - o["t0"]) / o["dur"]
+            # быстрое разгорание (первые 12%), затем плавное затухание
+            envelope = min(progress / 0.12, 1.0) * (1.0 - progress)
+            k = (o["w"] * envelope)[:, None]
+            out = out * (1.0 - k) + o["rgb"] * k
+        return np.clip(out, 0.0, 255.0).astype(np.uint8)
 
     def _apply_color_temp(self) -> None:
         temp = min(self._color_temp, NIGHT_COLOR_TEMP) if self._night else self._color_temp
@@ -343,7 +379,7 @@ class Engine:
                     s = self._effective_smooth()
                     smoothed *= s
                     smoothed += raw * (1.0 - s)
-                    final = self._overlay_identify(self.device.process(smoothed))
+                    final = self._apply_overlays(self.device.process(smoothed))
                     self.device.send_raw(final)
                     self._emit(final)
 
@@ -374,7 +410,7 @@ class Engine:
                     lamp = dict(self._lamp)
                 raw = render_lamp(lamp, n, tick - t0, self.geom.points)
                 self._apply_brightness(None)
-                final = self._overlay_identify(self.device.process(raw))
+                final = self._apply_overlays(self.device.process(raw))
                 self.device.send_raw(final)
                 self._emit(final)
                 dt = time.monotonic() - tick
@@ -403,7 +439,7 @@ class Engine:
                         self._music_dirty = False
                 raw = renderer.render(block, audio.samplerate)
                 self._apply_brightness(None)
-                final = self._overlay_identify(self.device.process(raw))
+                final = self._apply_overlays(self.device.process(raw))
                 self.device.send_raw(final)
                 self._emit(final)
 
