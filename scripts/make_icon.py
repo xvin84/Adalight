@@ -14,17 +14,18 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QRectF, Qt  # noqa: E402
-from PySide6.QtGui import QColor, QImage, QPainter, QRadialGradient  # noqa: E402
+from PySide6.QtGui import QColor, QImage, QPainter, QPen  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 
-GLOWS = [
-    ((0.22, 0.22), QColor(255, 64, 64)),    # верх-лево: красный
-    ((0.78, 0.22), QColor(64, 255, 96)),    # верх-право: зелёный
-    ((0.22, 0.78), QColor(255, 208, 48)),   # низ-лево: жёлтый
-    ((0.78, 0.78), QColor(72, 128, 255)),   # низ-право: синий
-]
+# цвета сторон — как в тесте калибровки: верх/право/низ/лево
+SIDE_COLORS = {
+    "top": QColor(255, 66, 66),
+    "right": QColor(62, 220, 100),
+    "bottom": QColor(74, 128, 255),
+    "left": QColor(255, 200, 40),
+}
 
 
 def render(size: int) -> QImage:
@@ -34,26 +35,35 @@ def render(size: int) -> QImage:
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     s = float(size)
 
-    # мягкое свечение по углам
-    for (cx, cy), color in GLOWS:
-        grad = QRadialGradient(cx * s, cy * s, 0.34 * s)
-        grad.setColorAt(0.0, color)
-        c2 = QColor(color)
-        c2.setAlpha(0)
-        grad.setColorAt(1.0, c2)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(grad)
-        p.drawEllipse(QRectF((cx - 0.34) * s, (cy - 0.34) * s, 0.68 * s, 0.68 * s))
+    # цветная «лента» по периметру: чёткое кольцо из четырёх сегментов
+    ring = QRectF(0.14 * s, 0.14 * s, 0.72 * s, 0.72 * s)
+    ring_width = 0.13 * s
+    radius = 0.16 * s
+    clips = {
+        "top": QRectF(0, 0, s, 0.38 * s),
+        "bottom": QRectF(0, 0.62 * s, s, 0.38 * s),
+        "left": QRectF(0, 0.38 * s, 0.5 * s, 0.24 * s),
+        "right": QRectF(0.5 * s, 0.38 * s, 0.5 * s, 0.24 * s),
+    }
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    for side, clip in clips.items():
+        p.save()
+        p.setClipRect(clip)
+        p.setPen(QPen(SIDE_COLORS[side], ring_width, Qt.PenStyle.SolidLine,
+                      Qt.PenCapStyle.FlatCap))
+        p.drawRoundedRect(ring, radius, radius)
+        p.restore()
 
-    # тёмный «монитор» поверх свечения
-    screen = QRectF(0.22 * s, 0.22 * s, 0.56 * s, 0.56 * s)
+    # тёмный «монитор» внутри — вплотную к рамке, без зазора
+    screen = QRectF(0.195 * s, 0.195 * s, 0.61 * s, 0.61 * s)
+    p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(QColor(22, 24, 28))
-    p.drawRoundedRect(screen, 0.09 * s, 0.09 * s)
+    p.drawRoundedRect(screen, 0.12 * s, 0.12 * s)
 
-    # блик на экране
-    p.setBrush(QColor(255, 255, 255, 18))
+    # лёгкий блик
+    p.setBrush(QColor(255, 255, 255, 22))
     p.drawRoundedRect(
-        QRectF(0.26 * s, 0.26 * s, 0.48 * s, 0.2 * s), 0.05 * s, 0.05 * s
+        QRectF(0.28 * s, 0.28 * s, 0.44 * s, 0.16 * s), 0.06 * s, 0.06 * s
     )
     p.end()
     return img
