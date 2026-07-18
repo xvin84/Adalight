@@ -20,6 +20,7 @@ DEFAULT_SETTINGS = {
     "x": 0.85,          # позиция вспышки на экране (0..1)
     "y": 0.9,
     "radius": 0.3,      # размер пятна
+    "flash_style": "ripple",  # «бульк» с волной (ripple) или статичное пятно (blob)
     "telegram_color": "#4fc3f7",
     "discord_color": "#7c4dff",
     "any_app": False,   # вспыхивать на любые уведомления цветом иконки приложения
@@ -120,6 +121,7 @@ class NotificationsPlugin:
             float(s.get("y", 0.9)),
             float(s.get("radius", 0.3)),
             duration=1.6,
+            style=str(s.get("flash_style", "ripple")),
         )
 
     def _run(self) -> None:

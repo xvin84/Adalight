@@ -6,7 +6,7 @@
 класть в `<каталог настроек>/plugins/*.py`.
 """
 
-from .base import PluginAPI
+from .base import PluginAPI, schema_defaults
 from .manager import PluginManager
 
-__all__ = ["PluginAPI", "PluginManager"]
+__all__ = ["PluginAPI", "PluginManager", "schema_defaults"]

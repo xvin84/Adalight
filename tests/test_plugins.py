@@ -40,7 +40,16 @@ def test_plugin_flash_uses_settings():
     plugin._api = make_api(flashes)
     plugin._settings = {**DEFAULT_SETTINGS, "x": 0.1, "y": 0.2, "radius": 0.5}
     plugin._flash("#ff0000")
-    assert flashes == [("#ff0000", 0.1, 0.2, 0.5, 1.6)]
+    assert flashes == [("#ff0000", 0.1, 0.2, 0.5, 1.6, "ripple")]
+
+
+def test_plugin_flash_style_blob():
+    flashes = []
+    plugin = NotificationsPlugin()
+    plugin._api = make_api(flashes)
+    plugin._settings = {**DEFAULT_SETTINGS, "flash_style": "blob"}
+    plugin._flash("#ff0000")
+    assert flashes[0][5] == "blob"
 
 
 def test_example_plugin_template_is_valid():
@@ -76,6 +85,40 @@ def test_create_plugin_interface():
     assert plugin.name == "notifications"
     assert plugin.title and plugin.description
     assert callable(plugin.start) and callable(plugin.stop)
+
+
+def test_schema_defaults():
+    from adalight.plugins import schema_defaults
+
+    schema = [
+        {"type": "note", "label": "просто текст"},
+        {"key": "n", "type": "int", "default": 50, "min": 1, "max": 240},
+        {"key": "c", "type": "color", "default": "#2ecc71"},
+        {"key": "nodefault", "type": "text"},
+    ]
+    assert schema_defaults(schema) == {"n": 50, "c": "#2ecc71"}
+    assert schema_defaults(None) == {}
+
+
+def test_example_plugin_declares_schema():
+    """Шаблон объявляет settings_schema — менеджер построит форму сам."""
+    import importlib.util
+    from pathlib import Path
+
+    from adalight.plugins import schema_defaults
+    from adalight.plugins.manager import _load_from_module
+
+    path = (
+        Path(__file__).resolve().parent.parent
+        / "examples" / "plugins" / "break_reminder.py"
+    )
+    spec = importlib.util.spec_from_file_location("example_break_reminder2", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    loaded = _load_from_module(module, path=path)
+    assert loaded.schema is not None
+    assert loaded.path == path and not loaded.builtin
+    assert schema_defaults(loaded.schema) == {"interval_min": 50, "color": "#2ecc71"}
 
 
 class RecordingPlugin:

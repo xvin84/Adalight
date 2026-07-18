@@ -7,11 +7,25 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+# Типы полей в settings_schema плагина. Менеджер плагинов строит по схеме форму
+# настроек автоматически — плагину не нужен код GUI.
+SCHEMA_FIELD_TYPES = ("bool", "int", "float", "choice", "color", "text", "note")
+
+
+def schema_defaults(schema: list[dict] | None) -> dict:
+    """Значения по умолчанию из settings_schema (Qt-free, зовётся и в тестах)."""
+    out: dict = {}
+    for field in schema or []:
+        key = field.get("key")
+        if key and field.get("type") != "note" and "default" in field:
+            out[key] = field["default"]
+    return out
+
 
 class PluginAPI:
     def __init__(
         self,
-        flash: Callable[[str, float, float, float, float], None],
+        flash: Callable[..., None],
         notify: Callable[[str, str], None],
         log: Callable[[str], None] | None = None,
     ):
@@ -26,12 +40,14 @@ class PluginAPI:
         y: float,
         radius: float = 0.25,
         duration: float = 1.5,
+        style: str = "ripple",
     ) -> None:
         """Вспышка цветом «#rrggbb» в точке (x, y) экрана (0..1), поверх любого режима.
 
-        Если подсветка выключена — вспышка молча игнорируется.
+        style="ripple" — «бульк» с расходящейся волной, style="blob" — статичное
+        пятно. Если подсветка выключена — вспышка молча игнорируется.
         """
-        self._flash(color, x, y, radius, duration)
+        self._flash(color, x, y, radius, duration, style)
 
     def notify(self, title: str, text: str) -> None:
         """Системное уведомление из трея (уважает настройку «Уведомления в трее»)."""

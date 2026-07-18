@@ -212,8 +212,8 @@ def test_add_overlay_lights_target_area():
     deadline = time.time() + 5.0
     while len(fake_serial.frames) < 2 and time.time() < deadline:
         time.sleep(0.01)
-    # вспышка в правом нижнем углу
-    engine.add_overlay("#00ff00", x=1.0, y=1.0, radius=0.3, duration=1.0)
+    # статичное пятно в правом нижнем углу
+    engine.add_overlay("#00ff00", x=1.0, y=1.0, radius=0.3, duration=1.0, style="blob")
     seen = len(fake_serial.frames)
     while len(fake_serial.frames) < seen + 40 and time.time() < deadline:
         time.sleep(0.01)
@@ -229,6 +229,44 @@ def test_add_overlay_lights_target_area():
     far = [i for i, (_, x, y) in enumerate(points) if np.hypot(x - 1, y - 1) > 0.8]
     assert best[near, 1].mean() > 60                    # у угла — зелёная вспышка
     assert best[near, 1].mean() > best[far, 1].mean() * 3  # далёкие почти не тронуты
+
+
+def test_ripple_overlay_travels_outward():
+    """«Бульк»: волна должна доходить до дальних диодов позже, чем до ближних."""
+    cfg = make_cfg(target_fps=120)
+    fake_serial = FakeSerial()
+    engine = Engine(cfg, backend_factory=lambda _: FakeBackend(color=(0, 0, 0)))
+    engine.device.connect = lambda: setattr(engine.device, "ser", fake_serial)
+
+    t = threading.Thread(target=engine.run, args=("live",))
+    t.start()
+    deadline = time.time() + 5.0
+    while len(fake_serial.frames) < 2 and time.time() < deadline:
+        time.sleep(0.01)
+
+    engine.add_overlay("#00ff00", x=1.0, y=1.0, radius=0.3, duration=1.0, style="ripple")
+    seen = len(fake_serial.frames)
+    started = time.time()
+    # копим кадры на всю длительность волны
+    while time.time() < started + 1.1 and time.time() < deadline:
+        time.sleep(0.01)
+    engine.stop()
+    t.join(timeout=5.0)
+
+    series = np.array(
+        [
+            np.frombuffer(f[6:], np.uint8).reshape(-1, 3)[:, 1]
+            for f in fake_serial.frames[seen:-1]
+        ]
+    )
+    assert len(series) > 20
+    points = engine.geom.points
+    near = min(range(len(points)), key=lambda i: np.hypot(points[i][1] - 1, points[i][2] - 1))
+    far = max(range(len(points)), key=lambda i: np.hypot(points[i][1] - 1, points[i][2] - 1))
+    assert series[:, near].max() > 60          # капля зажгла точку
+    assert series[:, far].max() > 30           # волна дошла до дальнего края
+    # ближний диод достигает пика раньше дальнего — волна расходится
+    assert int(series[:, near].argmax()) < int(series[:, far].argmax())
 
 
 def test_band_rects_and_localize_roundtrip():

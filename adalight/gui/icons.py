@@ -59,6 +59,11 @@ _BODIES: dict[str, str] = {
     "plug": '<path d="M9 3v5M15 3v5"/>'
             '<path d="M6.5 8h11v3.5a5.5 5.5 0 0 1-11 0z"/><path d="M12 17v4"/>',
     "flash": '<path d="M13 2 4.5 13.5H11L9.5 22 18 10.5h-6.5z"/>',
+    "bug": '<path d="M8 6a4 4 0 0 1 8 0"/><rect x="7" y="7" width="10" height="12" rx="5"/>'
+           '<path d="M3 10h3M18 10h3M3 15h4M17 15h4M4 20l3-2M20 20l-3-2M8 7 6.5 5M16 7l1.5-2"/>',
+    "bulb": '<path d="M9 18h6M10 21h4"/>'
+            '<path d="M12 3a6 6 0 0 0-4 10.5c.8.7 1 1.2 1 2.5h6c0-1.3.2-1.8 1-2.5'
+            'A6 6 0 0 0 12 3z"/>',
 }
 
 

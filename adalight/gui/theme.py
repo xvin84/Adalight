@@ -143,6 +143,29 @@ QListWidget#sidebar::item:selected {{
 }}
 QListWidget#sidebar::item:hover:!selected {{ background: {t["card"]}; }}
 
+QListWidget#pluginList {{
+    background: {t["input"]}; border: 1px solid {t["border"]}; border-radius: 8px;
+    outline: none; padding: 4px;
+}}
+QListWidget#pluginList::item {{ padding: 8px 10px; border-radius: 6px; }}
+QListWidget#pluginList::item:selected {{
+    background: {ACCENT}; color: #ffffff; font-weight: 600;
+}}
+QListWidget#pluginList::item:hover:!selected {{ background: {t["hover"]}; }}
+
+QPushButton#segBtn {{
+    background: transparent; border: 1px solid {t["border"]};
+    padding: 6px 16px; border-radius: 8px; color: {t["text_dim"]};
+}}
+QPushButton#segBtn:checked {{
+    background: {ACCENT}; color: #ffffff; border-color: {ACCENT};
+    font-weight: 600;
+}}
+
+QWidget#card {{
+    background: {t["card"]}; border: 1px solid {t["border"]}; border-radius: 8px;
+}}
+
 QFrame#hero {{
     background: {t["card"]}; border: 1px solid {t["border"]}; border-radius: 10px;
 }}
@@ -153,6 +176,11 @@ QLabel#heroDot {{ font-size: 20px; background: transparent; }}
 QLabel#toast {{
     background: {t["hover"]}; color: {t["text"]};
     border: 1px solid {t["border"]}; border-radius: 8px; padding: 8px 14px;
+}}
+
+QLabel#hintLabel {{
+    background: {t["card"]}; color: {t["text_dim"]};
+    border: 1px solid {t["border"]}; border-radius: 8px; padding: 8px 10px;
 }}
 
 QMenu {{

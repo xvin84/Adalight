@@ -133,30 +133,61 @@ class Engine:
         y: float,
         radius: float = 0.25,
         duration: float = 1.5,
+        style: str = "ripple",
     ) -> None:
         """Вспышка цветом в точке (x, y) нормированного экрана, затухает за duration.
 
+        style="ripple" — «бульк»: яркая капля в точке и расходящаяся по ленте
+        затухающая волна. style="blob" — статичное пятно (старое поведение).
         Потокобезопасно: зовётся из GUI и из потоков плагинов.
         """
         rgb = np.array(parse_hex_color(color), dtype=np.float64)
         dist = np.array(
             [np.hypot(px - x, py - y) for _, px, py in self.geom.points]
         )
-        weights = np.exp(-((dist / max(radius, 0.02)) ** 2))
-        self._push_overlay(rgb, weights, duration)
+        with self._lock:
+            if style == "ripple":
+                self._overlays.append(
+                    {
+                        "kind": "ripple",
+                        "rgb": rgb,
+                        "d": dist,
+                        "reach": float(dist.max()) + max(radius, 0.05),
+                        "radius": max(radius, 0.05),
+                        "t0": time.monotonic(),
+                        "dur": duration,
+                    }
+                )
+            else:
+                weights = np.exp(-((dist / max(radius, 0.02)) ** 2))
+                self._append_blob(rgb, weights, duration)
 
     def identify(self, index: int, duration: float = 1.5) -> None:
         """Вспыхнуть белым одним диодом — чтобы найти его на ленте."""
         weights = np.zeros(self.cfg.total_leds)
         if 0 <= index < len(weights):
             weights[index] = 1.0
-        self._push_overlay(np.array([255.0, 255.0, 255.0]), weights, duration)
-
-    def _push_overlay(self, rgb: np.ndarray, weights: np.ndarray, duration: float) -> None:
         with self._lock:
-            self._overlays.append(
-                {"rgb": rgb, "w": weights, "t0": time.monotonic(), "dur": duration}
-            )
+            self._append_blob(np.array([255.0, 255.0, 255.0]), weights, duration)
+
+    def _append_blob(self, rgb: np.ndarray, weights: np.ndarray, duration: float) -> None:
+        """Добавить статичное пятно. Зовётся под self._lock."""
+        self._overlays.append(
+            {"kind": "blob", "rgb": rgb, "w": weights, "t0": time.monotonic(), "dur": duration}
+        )
+
+    @staticmethod
+    def _ripple_weights(o: dict, progress: float) -> np.ndarray:
+        """Веса «булька» на момент progress (0..1): капля в точке + бегущее кольцо."""
+        d, radius = o["d"], o["radius"]
+        # кольцо расходится от точки, замедляясь, и к концу покидает ленту
+        ring_r = o["reach"] * (1.0 - (1.0 - progress) ** 2)
+        thickness = radius * (0.6 + 0.8 * progress)
+        ring = np.exp(-((d - ring_r) / max(thickness, 0.03)) ** 2) * (1.0 - progress) ** 1.4
+        # начальный «бульк» — яркая капля в точке, гаснет быстро
+        core = np.exp(-((d / max(radius * 0.5, 0.03)) ** 2))
+        core_amp = min(progress / 0.08, 1.0) * np.exp(-((progress / 0.22) ** 2))
+        return np.clip(core * core_amp + ring, 0.0, 1.0)
 
     def _apply_overlays(self, colors: np.ndarray) -> np.ndarray:
         if not self._overlays:
@@ -170,9 +201,13 @@ class Engine:
         out = colors.astype(np.float64)
         for o in active:
             progress = (now - o["t0"]) / o["dur"]
-            # быстрое разгорание (первые 12%), затем плавное затухание
-            envelope = min(progress / 0.12, 1.0) * (1.0 - progress)
-            k = (o["w"] * envelope)[:, None]
+            if o["kind"] == "ripple":
+                w = self._ripple_weights(o, progress)
+            else:
+                # быстрое разгорание (первые 12%), затем плавное затухание
+                envelope = min(progress / 0.12, 1.0) * (1.0 - progress)
+                w = o["w"] * envelope
+            k = w[:, None]
             out = out * (1.0 - k) + o["rgb"] * k
         return np.clip(out, 0.0, 255.0).astype(np.uint8)
 

@@ -46,6 +46,14 @@ class BreakReminderPlugin:
         "Каждые N минут лента вспыхивает зелёным по центру экрана — "
         "напоминание встать и размяться. Пример пользовательского плагина."
     )
+    version = "1.0"
+    # По этой схеме менеджер плагинов сам построит форму настроек — без кода GUI.
+    settings_schema = [
+        {"key": "interval_min", "type": "int", "label": "Интервал, мин",
+         "default": 50, "min": 1, "max": 240},
+        {"key": "color", "type": "color", "label": "Цвет вспышки",
+         "default": "#2ecc71"},
+    ]
 
     def __init__(self) -> None:
         self._api = None

@@ -13,7 +13,7 @@ layout, and a tray icon so the lighting keeps running with the window closed.
 
 ![Adalight main window](assets/screenshots/main-dark.png)
 
-![Plugins: notification flashes and catalog](assets/screenshots/plugins-dark.png)
+![Plugin manager: installed plugins and catalog](assets/screenshots/plugins-dark.png)
 
 ## Features
 
@@ -46,16 +46,22 @@ layout, and a tray icon so the lighting keeps running with the window closed.
 - **Auto-update**: the app checks GitHub Releases, downloads the new binary and
   restarts itself — no manual downloading; with "update automatically" enabled
   new versions install silently at startup.
-- **Plugins**: an extension system — drop .py files with `create_plugin()` into
-  `<config>/plugins/`; the API provides strip flashes and tray notifications.
-  Docs and a template: [docs/PLUGINS.md](docs/PLUGINS.md) (ru),
+- **Plugin manager**: a dedicated window with two views — *Installed*
+  (enable/disable, per-plugin settings, delete) and *Catalog* (search and
+  one-click install official/community plugins). Plugins are .py files with
+  `create_plugin()` in `<config>/plugins/`; a plugin can declare a
+  `settings_schema` and the manager builds its settings form automatically —
+  no GUI code needed. Docs and a template: [docs/PLUGINS.md](docs/PLUGINS.md) (ru),
   [examples/plugins/break_reminder.py](examples/plugins/break_reminder.py).
 - **Notification flashes** (built-in plugin): Telegram — a blue flash,
   Discord — purple; the "any app" mode colors the flash from the sending
-  app's icon. Position is set by dragging a spot on a screen diagram, works
-  over any mode. Windows requires notification-access permission.
-- **Plugin catalog**: official and community plugins — one-click install from
-  the Plugins tab (with a third-party-code warning).
+  app's icon. The flash is a "ripple" — a drop with a wave spreading along the
+  strip (a plain blob is also available). Position is set by dragging a spot
+  along the screen edge, works over any mode. Windows only sees **system**
+  notifications, so enable system notifications in the sending app (Telegram:
+  Settings → Notifications → use Windows notifications).
+- **Report a bug / idea**: buttons in System open a prefilled GitHub issue with
+  diagnostics (version, OS, capture backend, LED count) attached.
 - **WLED transport (beta)**: an ESP strip running WLED over Wi-Fi
   (UDP DRGB/DNRGB, port 21324) — no wire, no baud-rate cap.
 - **Modern UI**: sidebar navigation with SVG icons, a status card

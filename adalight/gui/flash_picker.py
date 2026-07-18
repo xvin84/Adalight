@@ -11,6 +11,15 @@ _SCREEN_BORDER = QColor(90, 94, 102)
 _GLOW = QColor(108, 140, 255)
 
 
+def snap_to_perimeter(x: float, y: float) -> tuple[float, float]:
+    """Проекция точки на ближайший край экрана: лента одномерна, центр не нужен."""
+    x = min(max(x, 0.0), 1.0)
+    y = min(max(y, 0.0), 1.0)
+    edges = ((x, 0.0, y), (1.0 - x, 1.0, y), (y, x, 0.0), (1.0 - y, x, 1.0))
+    _, nx, ny = min(edges, key=lambda e: e[0])
+    return nx, ny
+
+
 class FlashPositionPicker(QWidget):
     """Схема монитора; клик или перетаскивание ставит точку вспышки.
 
@@ -25,9 +34,8 @@ class FlashPositionPicker(QWidget):
         super().__init__(parent)
         self.setMinimumHeight(130)
         self.setCursor(Qt.CursorShape.CrossCursor)
-        self.setToolTip("Перетащите пятно туда, где должна вспыхивать лента")
-        self._x = 0.85
-        self._y = 0.9
+        self.setToolTip("Перетащите пятно по краю экрана — туда, где вспыхнет лента")
+        self._x, self._y = snap_to_perimeter(0.85, 0.9)
         self._radius = 0.3
         self._dragging = False
 
@@ -35,8 +43,7 @@ class FlashPositionPicker(QWidget):
 
     def set_values(self, x: float, y: float, radius: float) -> None:
         """Программная установка (без испускания changed)."""
-        self._x = min(max(float(x), 0.0), 1.0)
-        self._y = min(max(float(y), 0.0), 1.0)
+        self._x, self._y = snap_to_perimeter(float(x), float(y))
         self._radius = float(radius)
         self.update()
 
@@ -53,8 +60,9 @@ class FlashPositionPicker(QWidget):
         rect = self._screen_rect()
         if rect.width() <= 0 or rect.height() <= 0:
             return
-        self._x = min(max((event.position().x() - rect.x()) / rect.width(), 0.0), 1.0)
-        self._y = min(max((event.position().y() - rect.y()) / rect.height(), 0.0), 1.0)
+        x = (event.position().x() - rect.x()) / rect.width()
+        y = (event.position().y() - rect.y()) / rect.height()
+        self._x, self._y = snap_to_perimeter(x, y)
         self.update()
         self.changed.emit()
 
