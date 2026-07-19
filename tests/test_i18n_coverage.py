@@ -36,9 +36,10 @@ def _required_keys() -> set[str]:
               mw._THEME_LABELS):
         keys |= set(d.values())
     # метки встроенных эффектов лампы/цветомузыки — из их модов
-    from adalight.plugins.builtin import effects_lamp, effects_music
+    from adalight.plugins.builtin import effects_lamp, effects_music, transports
     keys |= {label for _id, label, _r, _f in effects_lamp.LAMP_EFFECTS}
     keys |= {label for _id, label, _c in effects_music.MUSIC_EFFECTS}
+    keys |= {label for _id, label, _f, _fl in transports.TRANSPORTS}
     keys |= set(PRESET_PROFILES)
     for _label, title, intro in mw._REPORT_TEMPLATES.values():
         keys |= {title, intro}

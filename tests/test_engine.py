@@ -62,12 +62,21 @@ class FakeSerial:
         pass
 
 
+def _inject_fake_serial(engine, fake_serial) -> None:
+    """Подсунуть движку serial-транспорт с фейковым портом (вместо connect)."""
+    from adalight.plugins.builtin.transports import SerialTransport
+
+    transport = SerialTransport(engine.device.cfg)
+    transport.ser = fake_serial
+    engine.device._transport = transport
+
+
 def run_engine_briefly(cfg, backend, frames=3) -> tuple[FakeSerial, list]:
     """Гоняет live-движок до получения `frames` кадров и корректно его глушит."""
     fake_serial = FakeSerial()
     emitted = []
     engine = Engine(cfg, on_colors=emitted.append, backend_factory=lambda _cfg: backend)
-    engine.device.connect = lambda: setattr(engine.device, "ser", fake_serial)
+    engine.device.connect = lambda: _inject_fake_serial(engine, fake_serial)
 
     t = threading.Thread(target=engine.run, args=("live",))
     t.start()
@@ -121,7 +130,7 @@ def test_set_tuning_brightness_applies_live():
     fake_serial = FakeSerial()
     emitted = []
     engine = Engine(cfg, on_colors=emitted.append, backend_factory=lambda _: FakeBackend())
-    engine.device.connect = lambda: setattr(engine.device, "ser", fake_serial)
+    engine.device.connect = lambda: _inject_fake_serial(engine, fake_serial)
 
     t = threading.Thread(target=engine.run, args=("live",))
     t.start()
@@ -156,7 +165,7 @@ def test_lamp_mode_sends_solid_color():
     fake_serial = FakeSerial()
     emitted = []
     engine = Engine(cfg, on_colors=emitted.append)
-    engine.device.connect = lambda: setattr(engine.device, "ser", fake_serial)
+    engine.device.connect = lambda: _inject_fake_serial(engine, fake_serial)
 
     t = threading.Thread(target=engine.run, args=("lamp",))
     t.start()
@@ -176,7 +185,7 @@ def test_identify_flashes_single_led():
     cfg = make_cfg(target_fps=120)
     fake_serial = FakeSerial()
     engine = Engine(cfg, backend_factory=lambda _: FakeBackend(color=(10, 10, 10)))
-    engine.device.connect = lambda: setattr(engine.device, "ser", fake_serial)
+    engine.device.connect = lambda: _inject_fake_serial(engine, fake_serial)
 
     t = threading.Thread(target=engine.run, args=("live",))
     t.start()
@@ -205,7 +214,7 @@ def test_add_overlay_lights_target_area():
     cfg = make_cfg(target_fps=120)
     fake_serial = FakeSerial()
     engine = Engine(cfg, backend_factory=lambda _: FakeBackend(color=(0, 0, 0)))
-    engine.device.connect = lambda: setattr(engine.device, "ser", fake_serial)
+    engine.device.connect = lambda: _inject_fake_serial(engine, fake_serial)
 
     t = threading.Thread(target=engine.run, args=("live",))
     t.start()
@@ -236,7 +245,7 @@ def test_ripple_overlay_travels_outward():
     cfg = make_cfg(target_fps=120)
     fake_serial = FakeSerial()
     engine = Engine(cfg, backend_factory=lambda _: FakeBackend(color=(0, 0, 0)))
-    engine.device.connect = lambda: setattr(engine.device, "ser", fake_serial)
+    engine.device.connect = lambda: _inject_fake_serial(engine, fake_serial)
 
     t = threading.Thread(target=engine.run, args=("live",))
     t.start()
@@ -303,7 +312,7 @@ class _OneFrameThenStatic(FakeBackend):
 
 def _run_live(engine, seconds):
     fake_serial = FakeSerial()
-    engine.device.connect = lambda: setattr(engine.device, "ser", fake_serial)
+    engine.device.connect = lambda: _inject_fake_serial(engine, fake_serial)
     t = threading.Thread(target=engine.run, args=("live",))
     t.start()
     time.sleep(seconds)

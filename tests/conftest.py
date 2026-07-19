@@ -24,4 +24,11 @@ def _builtin_effects():
             wants_color=wants_color, source="effects_music",
         )
     register_builtin_capture_sources(source="capture")
+
+    from adalight.plugins.builtin.transports import SerialTransport, WledTransport
+    from adalight.transports import register_transport
+    register_transport("serial", "Serial (Adalight)", SerialTransport,
+                       needs_serial=True, source="transports")
+    register_transport("wled", "WLED по Wi-Fi (beta)", WledTransport,
+                       needs_network=True, source="transports")
     yield

@@ -61,7 +61,7 @@ class MyMod:
 | `register_lamp_effect(id, label, render, wants_color=…, wants_speed=…)` | эффект лампы (**уже есть**) |
 | `register_music_effect(id, label, factory, wants_color=…)` | эффект цветомузыки |
 | `register_capture_source(id, label, factory, platforms=…)` | источник захвата экрана |
-| `register_transport(id, label, factory, wants_serial=…, wants_network=…)` | транспорт (serial/WLED/…) |
+| `register_transport(id, label, factory, needs_serial=…, needs_network=…)` | транспорт (serial/WLED/…) |
 | `on(event, handler)` / `emit(event, **data)` | событийная шина |
 | `trigger_flash / notify / log` | вспышки/уведомления/лог (**уже есть**) |
 
@@ -141,8 +141,14 @@ GUI (комбо эффектов, «Транспорт», «Бэкенд») ст
   фолбэком); `PluginAPI.register_capture_source`; CLI поднимает базовые моды
   перед движком (иначе headless остался бы без источников/эффектов); мягкая
   деградация (мод выключен → «Захват экрана» без источников).
-- **Этап 4 — транспорты:** реестр `transports` + мод `transports`; `device.py`
-  тонкий фасад.
+- **Этап 4 (готово):** реестр `transports` (спеки с `needs_serial`/
+  `needs_network`) + мод `transports` (base=True); `SerialTransport`/
+  `WledTransport` переехали из `device.py` в мод, `device.py` — тонкий фасад
+  (`make_transport` из реестра, конвейер цвета остаётся в ядре);
+  `PluginAPI.register_transport`; GUI строит комбобокс транспорта из реестра, а
+  видимость полей (порт/скорость/порядок против адреса/порта хоста) — из флагов
+  спеки; мягкая деградация (мод выключен → плейсхолдер, `connect()` даёт
+  дружелюбную ошибку «нет транспорта»).
 - **Этап 5 — событийная шина:** `EventBus`, перевод уведомлений/тостов на неё.
 
 Каждый этап — отдельный релиз, тесты зелёные, обратная совместимость.

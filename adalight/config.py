@@ -160,8 +160,8 @@ class Config:
         return self.leds_top + self.leds_right + self.leds_bottom + self.leds_left
 
     def validate(self) -> None:
-        if self.transport not in ("serial", "wled"):
-            raise ValueError(f"Неверный транспорт: {self.transport!r}")
+        # transport не валидируем: его даёт мод (может быть выключен), недоступный
+        # connect() сообщит дружелюбной ошибкой
         if self.transport == "wled" and not self.wled_host.strip():
             raise ValueError("Укажите адрес WLED-устройства (IP или имя хоста)")
         if not 1 <= self.wled_port <= 65535:

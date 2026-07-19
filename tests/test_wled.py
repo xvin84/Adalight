@@ -2,7 +2,8 @@ import numpy as np
 import pytest
 
 from adalight.config import Config
-from adalight.device import AdalightDevice, DeviceError
+from adalight.device import DeviceError
+from adalight.plugins.builtin.transports import WledTransport
 
 
 class FakeSocket:
@@ -16,21 +17,21 @@ class FakeSocket:
         pass
 
 
-def make_wled_device(n_top: int) -> tuple[AdalightDevice, FakeSocket]:
+def make_wled_transport(n_top: int) -> tuple[WledTransport, FakeSocket]:
     cfg = Config(
         transport="wled", wled_host="192.168.1.42",
         leds_top=n_top, leds_right=0, leds_bottom=0, leds_left=0,
     )
-    dev = AdalightDevice(cfg)
+    wt = WledTransport(cfg)
     sock = FakeSocket()
-    dev._sock = sock
-    dev._wled_addr = ("192.168.1.42", 21324)
-    return dev, sock
+    wt._sock = sock
+    wt._addr = ("192.168.1.42", 21324)
+    return wt, sock
 
 
 def test_drgb_packet_format():
-    dev, sock = make_wled_device(3)
-    dev.send_raw(np.array([[255, 0, 0], [0, 255, 0], [0, 0, 255]]))
+    wt, sock = make_wled_transport(3)
+    wt.send_raw(np.array([[255, 0, 0], [0, 255, 0], [0, 0, 255]], dtype=np.uint8))
     assert len(sock.packets) == 1
     data, addr = sock.packets[0]
     assert addr == ("192.168.1.42", 21324)
@@ -40,8 +41,8 @@ def test_drgb_packet_format():
 
 
 def test_dnrgb_for_long_strips():
-    dev, sock = make_wled_device(600)
-    dev.send_raw(np.zeros((600, 3)))
+    wt, sock = make_wled_transport(600)
+    wt.send_raw(np.zeros((600, 3), dtype=np.uint8))
     assert len(sock.packets) == 2  # 489 + 111
     first, second = sock.packets[0][0], sock.packets[1][0]
     assert first[0] == 4 and second[0] == 4       # DNRGB
@@ -57,11 +58,11 @@ def test_wled_ignores_color_order():
         transport="wled", wled_host="1.2.3.4", color_order="GRB",
         leds_top=1, leds_right=0, leds_bottom=0, leds_left=0,
     )
-    dev = AdalightDevice(cfg)
+    wt = WledTransport(cfg)
     sock = FakeSocket()
-    dev._sock = sock
-    dev._wled_addr = ("1.2.3.4", 21324)
-    dev.send_raw(np.array([[10, 20, 30]]))
+    wt._sock = sock
+    wt._addr = ("1.2.3.4", 21324)
+    wt.send_raw(np.array([[10, 20, 30]], dtype=np.uint8))
     assert sock.packets[0][0][2:] == bytes([10, 20, 30])
 
 
@@ -72,6 +73,6 @@ def test_wled_connect_requires_host():
 
 def test_wled_unknown_host_raises_device_error():
     cfg = Config(transport="wled", wled_host="no-such-host.invalid")
-    dev = AdalightDevice(cfg)
+    wt = WledTransport(cfg)
     with pytest.raises(DeviceError):
-        dev.connect()
+        wt.connect()

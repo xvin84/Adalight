@@ -101,6 +101,8 @@ from ..engine import Engine, Mode
 from ..i18n import available_languages, register_language, set_language, tr
 from ..plugins import PluginAPI, PluginManager
 from ..schedule import parse_time
+from ..transports import transport as _transport_spec
+from ..transports import transports
 from .anim import fade_in, fade_out_and_delete, make_pulse, slide_fade_in
 from .gradient import GradientEditor
 from .icons import icon
@@ -940,8 +942,6 @@ class MainWindow(QMainWindow):
         self._conn_form = form
 
         self.cb_transport = QComboBox()
-        self.cb_transport.addItem("Serial (Adalight)", "serial")
-        self.cb_transport.addItem(tr("WLED по Wi-Fi (beta)"), "wled")
         self.cb_transport.setToolTip(
             tr("Serial — Arduino/ESP по USB.\n"
             "WLED — лента на ESP с прошивкой WLED, по сети (UDP DRGB), "
@@ -992,21 +992,45 @@ class MainWindow(QMainWindow):
         self.cb_order.currentIndexChanged.connect(self._on_hard_changed)
         form.addRow(tr("Порядок цвета:"), self.cb_order)
 
-        self._sync_transport_rows()
+        self._fill_transports()
         return g
+
+    def _fill_transports(self) -> None:
+        """Список транспортов из реестра (мод «Транспорты» + плагины)."""
+        cur = self.cb_transport.currentData()
+        self.cb_transport.blockSignals(True)
+        self.cb_transport.clear()
+        specs = transports()
+        if not specs:
+            # мод «Транспорты» выключен — мягкая деградация
+            self.cb_transport.addItem(
+                tr("Нет транспортов (включите мод «Транспорты»)"), None
+            )
+            self.cb_transport.setEnabled(False)
+        else:
+            self.cb_transport.setEnabled(True)
+            for spec in specs:
+                self.cb_transport.addItem(tr(spec.label), spec.id)
+            if cur is not None:
+                idx = self.cb_transport.findData(cur)
+                self.cb_transport.setCurrentIndex(max(idx, 0))
+        self.cb_transport.blockSignals(False)
+        self._sync_transport_rows()
 
     def _on_transport_changed(self, *args) -> None:
         self._sync_transport_rows()
         self._on_hard_changed()
 
     def _sync_transport_rows(self) -> None:
-        serial_mode = self.cb_transport.currentData() != "wled"
+        spec = _transport_spec(self.cb_transport.currentData())
+        needs_serial = bool(spec and spec.needs_serial)
+        needs_network = bool(spec and spec.needs_network)
         rows = {
-            self._port_row_w: serial_mode,
-            self.cb_baud: serial_mode,
-            self.cb_order: serial_mode,
-            self.ed_wled_host: not serial_mode,
-            self.sp_wled_port: not serial_mode,
+            self._port_row_w: needs_serial,
+            self.cb_baud: needs_serial,
+            self.cb_order: needs_serial,
+            self.ed_wled_host: needs_network,
+            self.sp_wled_port: needs_network,
         }
         for widget, visible in rows.items():
             label = self._conn_form.labelForField(widget)
@@ -1583,6 +1607,7 @@ class MainWindow(QMainWindow):
         self._fill_lamp_effects()  # мод мог добавить/убрать эффекты
         self._fill_music_effects()
         self._fill_backends()
+        self._fill_transports()  # мод «Транспорты» мог добавить/убрать способ доставки
 
     def flash_test(self, entry: dict) -> None:
         if self.thread is None or self._mode not in _MAIN_MODES:
@@ -2078,7 +2103,10 @@ class MainWindow(QMainWindow):
 
     def _apply_cfg_to_ui(self, cfg: Config) -> None:
         self._refresh_ports()
-        self.cb_transport.setCurrentIndex(0 if cfg.transport == "serial" else 1)
+        self._fill_transports()  # транспорты из реестра (мод «Транспорты»)
+        idx = self.cb_transport.findData(cfg.transport)
+        if idx >= 0:
+            self.cb_transport.setCurrentIndex(idx)
         self.cb_port.setCurrentText(cfg.port)
         self.cb_baud.setCurrentText(str(cfg.baud))
         self.cb_order.setCurrentText(cfg.color_order)
@@ -2169,8 +2197,10 @@ class MainWindow(QMainWindow):
             )
 
     def _cfg_from_ui(self) -> Config:
+        # мод «Транспорты» мог быть выключен (currentData() == None) — храним прежний
+        transport = self.cb_transport.currentData() or self.cfg.transport
         return Config(
-            transport=self.cb_transport.currentData(),
+            transport=transport,
             wled_host=self.ed_wled_host.text().strip(),
             wled_port=self.sp_wled_port.value(),
             plugins=self._plugins_cfg_from_ui(),

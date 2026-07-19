@@ -101,10 +101,12 @@ class FakeSerial:
 
 
 def test_send_raw_reorders_channels():
+    from adalight.plugins.builtin.transports import SerialTransport
+
     cfg = Config(leds_top=1, leds_right=0, leds_bottom=0, leds_left=0, color_order="GRB")
-    dev = AdalightDevice(cfg)
+    transport = SerialTransport(cfg)
     fake = FakeSerial()
-    dev.ser = fake
-    dev.send_raw(np.array([[10, 20, 30]]))
+    transport.ser = fake
+    transport.send_raw(np.array([[10, 20, 30]], dtype=np.uint8))
     assert fake.written[:3] == b"Ada"
     assert list(fake.written[6:9]) == [20, 10, 30]  # G, R, B

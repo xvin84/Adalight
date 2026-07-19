@@ -14,6 +14,7 @@ BUILTIN_MODULES = (
     "adalight.plugins.builtin.effects_lamp",
     "adalight.plugins.builtin.effects_music",
     "adalight.plugins.builtin.capture",
+    "adalight.plugins.builtin.transports",
     "adalight.plugins.builtin.notifications",
 )
 
@@ -148,9 +149,11 @@ class PluginManager:
         """Снять всё, что мод зарегистрировал (эффекты, источники захвата)."""
         from ..capture import unregister_source as unregister_capture
         from ..effects import unregister_source as unregister_effects
+        from ..transports import unregister_source as unregister_transport
 
         unregister_effects(loaded.name)
         unregister_capture(loaded.name)
+        unregister_transport(loaded.name)
 
     def get(self, name: str) -> LoadedPlugin | None:
         return next((p for p in self.plugins if p.name == name), None)

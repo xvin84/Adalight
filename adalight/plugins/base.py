@@ -111,6 +111,21 @@ class PluginAPI:
             platforms=platforms, priority=priority, source=self._source,
         )
 
+    def register_transport(
+        self, transport_id: str, label: str, factory, *,
+        needs_serial: bool = False, needs_network: bool = False,
+    ) -> None:
+        """Добавить транспорт (способ доставки цветов на ленту). factory(cfg) ->
+        объект с методами connect(), send_raw(colors_uint8 (N,3)), close().
+        needs_serial/needs_network подсказывают GUI, какие поля показать
+        (порт/скорость/порядок каналов или адрес/порт хоста)."""
+        from ..transports import register_transport
+
+        register_transport(
+            transport_id, label, factory,
+            needs_serial=needs_serial, needs_network=needs_network, source=self._source,
+        )
+
     def notify(self, title: str, text: str) -> None:
         """Системное уведомление из трея (уважает настройку «Уведомления в трее»)."""
         self._notify(title, text)

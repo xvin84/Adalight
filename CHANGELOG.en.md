@@ -4,6 +4,16 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/);
 versions follow [SemVer](https://semver.org/). Full diffs are in the
 [GitHub releases](https://github.com/xvin84/Adalight/releases).
 
+## [0.20.0] — 2026-07-19
+
+- "Everything is a mod", stage 4: the ways colors reach the strip (serial over
+  USB and WLED over Wi-Fi) became a built-in "Transports" mod — visible and
+  manageable in the plugin manager.
+- A plugin can add its own transport (`register_transport`).
+- The core (`device.py`) became a thin facade: the color pipeline stays in the
+  core while a registry transport delivers the bytes; the transport picker in
+  the UI is built from the registry, connection fields show per transport type.
+
 ## [0.19.0] — 2026-07-19
 
 - "Everything is a mod", stage 3: screen capture sources became a built-in
