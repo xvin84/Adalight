@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..i18n import tr
+
 
 class _ColorButton(QPushButton):
     """Кнопка-плашка цвета: хранит «#rrggbb», клик открывает палитру."""
@@ -45,7 +47,7 @@ class _ColorButton(QPushButton):
         return self._value
 
     def _pick(self) -> None:
-        color = QColorDialog.getColor(QColor(self._value), self, "Цвет")
+        color = QColorDialog.getColor(QColor(self._value), self, tr("Цвет"))
         if color.isValid():
             self.set_value(color.name())
             self.changed.emit()

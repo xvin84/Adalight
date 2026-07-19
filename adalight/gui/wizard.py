@@ -19,11 +19,14 @@ from PySide6.QtWidgets import (
 
 from ..config import DIRECTIONS, START_CORNERS
 from ..device import list_serial_ports
+from ..i18n import tr
 
 if TYPE_CHECKING:
     from .main_window import MainWindow
 
 _BAUDS = ("115200", "230400", "460800", "500000", "921600", "1000000", "2000000")
+# значения — русские ключи tr(); переводятся в месте использования (ниже),
+# а не здесь: модуль импортируется до выбора языка
 _CORNER_LABELS = {
     "top-left": "Верхний левый",
     "top-right": "Верхний правый",
@@ -39,12 +42,12 @@ class SetupWizard(QWizard):
     def __init__(self, mw: MainWindow):
         super().__init__(mw)
         self._mw = mw
-        self.setWindowTitle("Мастер настройки Adalight")
+        self.setWindowTitle(tr("Мастер настройки Adalight"))
         self.setWizardStyle(QWizard.WizardStyle.ModernStyle)
-        self.setButtonText(QWizard.WizardButton.NextButton, "Далее >")
-        self.setButtonText(QWizard.WizardButton.BackButton, "< Назад")
-        self.setButtonText(QWizard.WizardButton.FinishButton, "Готово")
-        self.setButtonText(QWizard.WizardButton.CancelButton, "Отмена")
+        self.setButtonText(QWizard.WizardButton.NextButton, tr("Далее >"))
+        self.setButtonText(QWizard.WizardButton.BackButton, tr("< Назад"))
+        self.setButtonText(QWizard.WizardButton.FinishButton, tr("Готово"))
+        self.setButtonText(QWizard.WizardButton.CancelButton, tr("Отмена"))
         self.setMinimumSize(520, 420)
 
         self.addPage(self._page_port())
@@ -58,30 +61,30 @@ class SetupWizard(QWizard):
 
     def _page_port(self) -> QWizardPage:
         page = QWizardPage()
-        page.setTitle("Подключение")
+        page.setTitle(tr("Подключение"))
         page.setSubTitle(
-            "Подключите Arduino/ESP с прошивкой Adalight по USB и выберите порт."
+            tr("Подключите Arduino/ESP с прошивкой Adalight по USB и выберите порт.")
         )
         form = QFormLayout(page)
 
         self.cb_port = QComboBox()
         self.cb_port.setEditable(True)
-        btn = QPushButton("Обновить")
+        btn = QPushButton(tr("Обновить"))
         btn.clicked.connect(self._refresh_ports)
         row = QHBoxLayout()
         row.addWidget(self.cb_port, 1)
         row.addWidget(btn)
-        form.addRow("Порт:", row)
+        form.addRow(tr("Порт:"), row)
 
         self.cb_baud = QComboBox()
         self.cb_baud.setEditable(True)
         self.cb_baud.addItems(_BAUDS)
         self.cb_baud.setCurrentText("115200")
-        form.addRow("Скорость:", self.cb_baud)
+        form.addRow(tr("Скорость:"), self.cb_baud)
 
         hint = QLabel(
-            "Скорость должна совпадать с прошивкой. Если порта нет в списке —\n"
-            "проверьте кабель (бывают кабели «только зарядка») и драйвер CH340/CP210x."
+            tr("Скорость должна совпадать с прошивкой. Если порта нет в списке —\n"
+            "проверьте кабель (бывают кабели «только зарядка») и драйвер CH340/CP210x.")
         )
         hint.setWordWrap(True)
         form.addRow(hint)
@@ -90,10 +93,10 @@ class SetupWizard(QWizard):
 
     def _page_leds(self) -> QWizardPage:
         page = QWizardPage()
-        page.setTitle("Светодиоды")
+        page.setTitle(tr("Светодиоды"))
         page.setSubTitle(
-            "Посчитайте диоды на каждой стороне монитора и укажите, где начинается "
-            "лента и куда она идёт."
+            tr("Посчитайте диоды на каждой стороне монитора и укажите, где начинается "
+            "лента и куда она идёт.")
         )
         form = QFormLayout(page)
 
@@ -105,50 +108,50 @@ class SetupWizard(QWizard):
 
         self.sp_top, self.sp_right = spin(15), spin(9)
         self.sp_bottom, self.sp_left = spin(15), spin(9)
-        form.addRow("Сверху:", self.sp_top)
-        form.addRow("Справа:", self.sp_right)
-        form.addRow("Снизу:", self.sp_bottom)
-        form.addRow("Слева:", self.sp_left)
+        form.addRow(tr("Сверху:"), self.sp_top)
+        form.addRow(tr("Справа:"), self.sp_right)
+        form.addRow(tr("Снизу:"), self.sp_bottom)
+        form.addRow(tr("Слева:"), self.sp_left)
 
         self.cb_corner = QComboBox()
         for value in START_CORNERS:
-            self.cb_corner.addItem(_CORNER_LABELS[value], value)
+            self.cb_corner.addItem(tr(_CORNER_LABELS[value]), value)
         self.cb_corner.setCurrentIndex(START_CORNERS.index("bottom-left"))
-        form.addRow("Начальный угол:", self.cb_corner)
+        form.addRow(tr("Начальный угол:"), self.cb_corner)
 
         self.cb_direction = QComboBox()
         for value in DIRECTIONS:
-            self.cb_direction.addItem(_DIRECTION_LABELS[value], value)
-        form.addRow("Направление:", self.cb_direction)
+            self.cb_direction.addItem(tr(_DIRECTION_LABELS[value]), value)
+        form.addRow(tr("Направление:"), self.cb_direction)
         return page
 
     def _page_test(self) -> QWizardPage:
         page = QWizardPage()
-        page.setTitle("Проверка")
-        page.setSubTitle("Убедимся, что стороны не перепутаны.")
+        page.setTitle(tr("Проверка"))
+        page.setSubTitle(tr("Убедимся, что стороны не перепутаны."))
         lay = QVBoxLayout(page)
 
-        btn_test = QPushButton("▶ Тест сторон")
+        btn_test = QPushButton(tr("▶ Тест сторон"))
         btn_test.clicked.connect(self._run_sides_test)
         lay.addWidget(btn_test)
 
         lay.addWidget(
             QLabel(
-                "Должно получиться: верх — красный, право — зелёный,\n"
-                "низ — синий, лево — жёлтый."
+                tr("Должно получиться: верх — красный, право — зелёный,\n"
+                "низ — синий, лево — жёлтый.")
             )
         )
 
-        self.ch_flip_x = QCheckBox("Лево и право перепутаны")
-        self.ch_flip_y = QCheckBox("Верх и низ перепутаны")
+        self.ch_flip_x = QCheckBox(tr("Лево и право перепутаны"))
+        self.ch_flip_y = QCheckBox(tr("Верх и низ перепутаны"))
         self.ch_flip_x.toggled.connect(self._run_sides_test_if_running)
         self.ch_flip_y.toggled.connect(self._run_sides_test_if_running)
         lay.addWidget(self.ch_flip_x)
         lay.addWidget(self.ch_flip_y)
 
         hint = QLabel(
-            "Если цвета сторон верные, но оттенки странные (красный горит зелёным) —\n"
-            "после мастера поменяйте «Порядок цвета» на вкладке «Устройство» (обычно GRB)."
+            tr("Если цвета сторон верные, но оттенки странные (красный горит зелёным) —\n"
+            "после мастера поменяйте «Порядок цвета» на вкладке «Устройство» (обычно GRB).")
         )
         hint.setWordWrap(True)
         lay.addWidget(hint)

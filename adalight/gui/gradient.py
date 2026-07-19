@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..i18n import tr
+
 MIN_STOPS = 2
 MAX_STOPS = 8
 
@@ -54,7 +56,7 @@ class GradientEditor(QWidget):
         self._rows_host = QVBoxLayout()
         self._rows_host.setContentsMargins(0, 0, 0, 0)
         root.addLayout(self._rows_host)
-        self._btn_add = QPushButton("+ Добавить цвет")
+        self._btn_add = QPushButton(tr("+ Добавить цвет"))
         self._btn_add.clicked.connect(self._on_add)
         root.addWidget(self._btn_add)
         self._rows: list[QWidget] = []
@@ -96,12 +98,12 @@ class GradientEditor(QWidget):
         spin.setSingleStep(0.05)
         spin.setDecimals(2)
         spin.setValue(pos)
-        spin.setToolTip("Позиция точки вдоль ленты: 0 — начало, 1 — конец")
+        spin.setToolTip(tr("Позиция точки вдоль ленты: 0 — начало, 1 — конец"))
         spin.valueChanged.connect(self._on_changed)
 
         remove = QPushButton("✕")
         remove.setFixedWidth(28)
-        remove.setToolTip("Удалить точку")
+        remove.setToolTip(tr("Удалить точку"))
         remove.clicked.connect(lambda: self._remove_row(row))
 
         lay.addWidget(btn)
@@ -133,7 +135,7 @@ class GradientEditor(QWidget):
         btn.setStyleSheet(f"background: {value}; border: 1px solid #777; border-radius: 4px;")
 
     def _pick_color(self, btn: QPushButton) -> None:
-        color = QColorDialog.getColor(QColor(btn.property("color_value")), self, "Цвет точки")
+        color = QColorDialog.getColor(QColor(btn.property("color_value")), self, tr("Цвет точки"))
         if color.isValid():
             self._set_color(btn, color.name())
             self._on_changed()

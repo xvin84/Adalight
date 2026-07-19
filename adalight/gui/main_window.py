@@ -96,6 +96,7 @@ from ..config import (
 )
 from ..device import list_serial_ports
 from ..engine import Engine, Mode
+from ..i18n import available_languages, register_language, set_language, tr
 from ..plugins import PluginAPI, PluginManager
 from ..schedule import parse_time
 from .anim import fade_in, fade_out_and_delete, make_pulse, slide_fade_in
@@ -174,14 +175,16 @@ _BTN_UPDATE_QSS = (
     "QPushButton:hover {background: #d09c1d;}"
 )
 
-_ABOUT_HTML = f"""
-<h3>Adalight {__version__}</h3>
-<p>Фоновая подсветка (ambilight) для LED-ленты: захват экрана, лампа
-и цветомузыка. Windows и Linux/Wayland.</p>
-<p>Протокол: Adalight (Arduino/ESP по serial).</p>
-<p><a href="https://github.com/xvin84/Adalight">github.com/xvin84/Adalight</a><br>
-Автор: xvin84 · Лицензия: MIT</p>
-"""
+def _about_html() -> str:
+    return (
+        f"<h3>Adalight {__version__}</h3>"
+        f"<p>{tr('Фоновая подсветка (ambilight) для LED-ленты: захват экрана, '
+              'лампа и цветомузыка. Windows и Linux/Wayland.')}</p>"
+        f"<p>{tr('Протокол: Adalight (Arduino/ESP по serial).')}</p>"
+        '<p><a href="https://github.com/xvin84/Adalight">'
+        "github.com/xvin84/Adalight</a><br>"
+        f"{tr('Автор: xvin84 · Лицензия: MIT')}</p>"
+    )
 
 
 class EngineThread(QThread):
@@ -373,6 +376,8 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(app_icon())
 
         self.cfg = Config.load()
+        self._register_locales()  # языки-локали + активный язык до сборки UI
+        set_language(self.cfg.language)
         self.thread: EngineThread | None = None
         self._mode: Mode | None = None
         self._quitting = False
@@ -391,7 +396,7 @@ class MainWindow(QMainWindow):
         # если бинарник переехал — молча чиним запись автозапуска
         try:
             if autostart.refresh_if_stale():
-                self.statusBar().showMessage("Запись автозапуска обновлена", 4000)
+                self.statusBar().showMessage(tr("Запись автозапуска обновлена"), 4000)
         except OSError:
             pass
 
@@ -456,15 +461,15 @@ class MainWindow(QMainWindow):
         self.nav.setFixedWidth(158)
         self.nav.setIconSize(QSize(20, 20))
         sections = (
-            ("monitor", "Режим"),
-            ("chip", "Устройство"),
-            ("sliders", "Изображение"),
-            ("sun", "Яркость"),
-            ("plug", "Плагины"),
-            ("gear", "Система"),
+            ("monitor", tr("Режим")),
+            ("chip", tr("Устройство")),
+            ("sliders", tr("Изображение")),
+            ("sun", tr("Яркость")),
+            ("plug", tr("Плагины")),
+            ("gear", tr("Система")),
         )
         for icon_name, label in sections:
-            self.nav.addItem(QListWidgetItem(icon(icon_name), label))
+            self.nav.addItem(QListWidgetItem(icon(icon_name), tr(label)))
 
         self.pages = QStackedWidget()
         self.pages.addWidget(self._make_tab(self._tab_mode_content()))
@@ -489,22 +494,22 @@ class MainWindow(QMainWindow):
         right = QVBoxLayout()
 
         profiles_row = QHBoxLayout()
-        profiles_row.addWidget(QLabel("Профиль:"))
+        profiles_row.addWidget(QLabel(tr("Профиль:")))
         self.cb_profile = QComboBox()
         self.cb_profile.setMinimumWidth(160)
-        self.cb_profile.setToolTip("Выбор профиля сразу применяет его настройки")
+        self.cb_profile.setToolTip(tr("Выбор профиля сразу применяет его настройки"))
         self.cb_profile.activated.connect(self._on_profile_selected)
         self.btn_prof_update = QPushButton()
         self.btn_prof_update.setFixedWidth(36)
         self.btn_prof_update.clicked.connect(self._on_profile_update)
-        btn_prof_save = QPushButton("Сохранить как…")
+        btn_prof_save = QPushButton(tr("Сохранить как…"))
         btn_prof_save.setIcon(icon("save"))
-        btn_prof_save.setToolTip("Сохранить текущие настройки как именованный профиль")
+        btn_prof_save.setToolTip(tr("Сохранить текущие настройки как именованный профиль"))
         btn_prof_save.clicked.connect(self._on_profile_save)
         btn_prof_del = QPushButton()
         btn_prof_del.setIcon(icon("trash"))
         btn_prof_del.setFixedWidth(36)
-        btn_prof_del.setToolTip("Удалить выбранный профиль")
+        btn_prof_del.setToolTip(tr("Удалить выбранный профиль"))
         btn_prof_del.clicked.connect(self._on_profile_delete)
         profiles_row.addWidget(self.cb_profile, 1)
         profiles_row.addWidget(self.btn_prof_update)
@@ -523,13 +528,13 @@ class MainWindow(QMainWindow):
         self.lbl_hero_dot.setObjectName("heroDot")
         text_col = QVBoxLayout()
         text_col.setSpacing(0)
-        self.lbl_state = QLabel("Остановлено")
+        self.lbl_state = QLabel(tr("Остановлено"))
         self.lbl_state.setObjectName("heroState")
-        self.lbl_hero_sub = QLabel("Нажмите «Старт», чтобы включить подсветку")
+        self.lbl_hero_sub = QLabel(tr("Нажмите «Старт», чтобы включить подсветку"))
         self.lbl_hero_sub.setObjectName("heroSub")
         text_col.addWidget(self.lbl_state)
         text_col.addWidget(self.lbl_hero_sub)
-        self.btn_start = QPushButton("▶ Старт")
+        self.btn_start = QPushButton(tr("▶ Старт"))
         self.btn_start.setStyleSheet(_BTN_START_QSS)
         self.btn_start.setMinimumWidth(130)
         self.btn_start.clicked.connect(self._on_start_stop)
@@ -546,12 +551,12 @@ class MainWindow(QMainWindow):
         right.addWidget(self.preview, 1)
 
         overlay = QHBoxLayout()
-        self.ch_preview_screen = QCheckBox("Экран")
-        self.ch_preview_screen.setToolTip("Показывать картинку экрана в предпросмотре")
+        self.ch_preview_screen = QCheckBox(tr("Экран"))
+        self.ch_preview_screen.setToolTip(tr("Показывать картинку экрана в предпросмотре"))
         self.ch_preview_screen.toggled.connect(self._on_preview_options_changed)
-        self.ch_preview_zones = QCheckBox("Зоны сбора цвета")
+        self.ch_preview_zones = QCheckBox(tr("Зоны сбора цвета"))
         self.ch_preview_zones.setToolTip(
-            "Показывать области, из которых усредняется цвет каждого диода"
+            tr("Показывать области, из которых усредняется цвет каждого диода")
         )
         self.ch_preview_zones.toggled.connect(self._on_preview_options_changed)
         overlay.addStretch(1)
@@ -561,37 +566,37 @@ class MainWindow(QMainWindow):
         right.addLayout(overlay)
 
         controls = QHBoxLayout()
-        self.btn_apply = QPushButton("Применить сейчас")
+        self.btn_apply = QPushButton(tr("Применить сейчас"))
         self.btn_apply.setEnabled(False)
         self.btn_apply.setToolTip(
-            "Перезапустить с новыми настройками, не дожидаясь автоприменения"
+            tr("Перезапустить с новыми настройками, не дожидаясь автоприменения")
         )
         self.btn_apply.clicked.connect(lambda: self._start_engine(self._selected_mode()))
-        self.btn_night = QPushButton("Ночной режим")
+        self.btn_night = QPushButton(tr("Ночной режим"))
         self.btn_night.setIcon(icon("moon"))
         self.btn_night.setCheckable(True)
         self.btn_night.setToolTip(
-            "Теплее (3400K), темнее (×0.6) и плавнее — поверх текущих настроек"
+            tr("Теплее (3400K), темнее (×0.6) и плавнее — поверх текущих настроек")
         )
         self.btn_night.toggled.connect(self._on_soft_changed)
         controls.addWidget(self.btn_apply, 1)
         controls.addWidget(self.btn_night, 1)
         right.addLayout(controls)
 
-        calib = QGroupBox("Калибровка")
+        calib = QGroupBox(tr("Калибровка"))
         tests = QHBoxLayout(calib)
-        btn_sides = QPushButton("Стороны")
-        btn_sides.setToolTip("Верх=красный, право=зелёный, низ=синий, лево=жёлтый")
+        btn_sides = QPushButton(tr("Стороны"))
+        btn_sides.setToolTip(tr("Верх=красный, право=зелёный, низ=синий, лево=жёлтый"))
         btn_sides.clicked.connect(lambda: self._start_engine("sides"))
-        btn_chase = QPushButton("Бегущий диод")
+        btn_chase = QPushButton(tr("Бегущий диод"))
         btn_chase.clicked.connect(lambda: self._start_engine("chase"))
-        btn_off = QPushButton("Погасить")
+        btn_off = QPushButton(tr("Погасить"))
         btn_off.clicked.connect(lambda: self._start_engine("off"))
         for b in (btn_sides, btn_chase, btn_off):
             tests.addWidget(b)
         right.addWidget(calib)
 
-        btn_save = QPushButton("Сохранить настройки")
+        btn_save = QPushButton(tr("Сохранить настройки"))
         btn_save.setIcon(icon("save"))
         btn_save.clicked.connect(self._on_save)
         right.addWidget(btn_save)
@@ -612,7 +617,7 @@ class MainWindow(QMainWindow):
         # горячие клавиши
         QShortcut(QKeySequence("Ctrl+S"), self, activated=self._on_save)
         QShortcut(QKeySequence("Ctrl+Q"), self, activated=self._quit)
-        btn_save.setToolTip("Сохранить как текущие настройки (Ctrl+S)")
+        btn_save.setToolTip(tr("Сохранить как текущие настройки (Ctrl+S)"))
 
     # ── статус-карточка ───────────────────────────────────────────────────
 
@@ -629,9 +634,9 @@ class MainWindow(QMainWindow):
     def _on_led_clicked(self, index: int) -> None:
         if self.thread is not None and self._mode in _MAIN_MODES:
             self.thread.identify(index)
-            self._toast(f"Диод {index + 1} вспыхнул на ленте")
+            self._toast(tr("Диод {n} вспыхнул на ленте").format(n=index + 1))
         else:
-            self._toast("Запустите подсветку, чтобы подсветить диод на ленте")
+            self._toast(tr("Запустите подсветку, чтобы подсветить диод на ленте"))
 
     def _notify(self, title: str, text: str) -> None:
         """Системное уведомление из трея (если включено в настройках)."""
@@ -687,18 +692,18 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(12)
 
-        g = QGroupBox("Источник")
+        g = QGroupBox(tr("Источник"))
         form = QFormLayout(g)
         self.cb_mode = QComboBox()
         for value in MODES:
-            self.cb_mode.addItem(_MODE_LABELS[value], value)
+            self.cb_mode.addItem(tr(_MODE_LABELS[value]), value)
         self.cb_mode.setToolTip(
-            "Захват экрана — ambilight по краям картинки;\n"
+            tr("Захват экрана — ambilight по краям картинки;\n"
             "Лампа — эффекты без захвата; Цветомузыка — лента реагирует на звук.\n"
-            "Смена режима на лету перезапускает подсветку сразу."
+            "Смена режима на лету перезапускает подсветку сразу.")
         )
         self.cb_mode.currentIndexChanged.connect(self._on_mode_changed)
-        form.addRow("Режим:", self.cb_mode)
+        form.addRow(tr("Режим:"), self.cb_mode)
         lay.addWidget(g)
 
         self.mode_stack = QStackedWidget()
@@ -715,7 +720,7 @@ class MainWindow(QMainWindow):
             fade_in(self.mode_stack.currentWidget())
 
     def _group_capture(self) -> QGroupBox:
-        g = QGroupBox("Захват экрана")
+        g = QGroupBox(tr("Захват экрана"))
         form = QFormLayout(g)
 
         self.cb_output = QComboBox()
@@ -724,116 +729,116 @@ class MainWindow(QMainWindow):
         btn = QPushButton()
         btn.setIcon(icon("refresh"))
         btn.setFixedWidth(32)
-        btn.setToolTip("Обновить список мониторов")
+        btn.setToolTip(tr("Обновить список мониторов"))
         btn.clicked.connect(self._refresh_outputs)
         row = QHBoxLayout()
         row.addWidget(self.cb_output, 1)
         row.addWidget(btn)
-        form.addRow("Монитор:", row)
+        form.addRow(tr("Монитор:"), row)
 
         self.cb_backend = QComboBox()
         self.cb_backend.addItems(BACKENDS)
         self.cb_backend.setToolTip(
-            "auto: Windows — bettercam → dxcam → mss, Wayland — wf-recorder, иначе mss.\n"
-            "Реально работающий бэкенд показан в статус-баре."
+            tr("auto: Windows — bettercam → dxcam → mss, Wayland — wf-recorder, иначе mss.\n"
+            "Реально работающий бэкенд показан в статус-баре.")
         )
         self.cb_backend.currentIndexChanged.connect(self._on_hard_changed)
-        form.addRow("Бэкенд:", self.cb_backend)
+        form.addRow(tr("Бэкенд:"), self.cb_backend)
 
         self.sp_fps = QSpinBox()
         self.sp_fps.setRange(1, 240)
         self.sp_fps.setToolTip(
-            "Сколько раз в секунду обновлять ленту. 60 — комфортно;\n"
-            "реальный fps виден в статус-карточке."
+            tr("Сколько раз в секунду обновлять ленту. 60 — комфортно;\n"
+            "реальный fps виден в статус-карточке.")
         )
         self.sp_fps.valueChanged.connect(self._on_hard_changed)
-        form.addRow("Целевой FPS:", self.sp_fps)
+        form.addRow(tr("Целевой FPS:"), self.sp_fps)
 
         self.ds_band = QDoubleSpinBox()
         self.ds_band.setRange(0.02, 0.5)
         self.ds_band.setSingleStep(0.01)
-        self.ds_band.setToolTip("Толщина краевой полосы, доля экрана")
+        self.ds_band.setToolTip(tr("Толщина краевой полосы, доля экрана"))
         # влияет на зоны сбора цвета — обновляем и предпросмотр
         self.ds_band.valueChanged.connect(self._on_geometry_changed)
-        form.addRow("Полоса захвата:", self.ds_band)
+        form.addRow(tr("Полоса захвата:"), self.ds_band)
 
         self.ds_window = QDoubleSpinBox()
         self.ds_window.setRange(0.01, 0.5)
         self.ds_window.setSingleStep(0.01)
-        self.ds_window.setToolTip("Ширина окна одного диода, доля экрана")
+        self.ds_window.setToolTip(tr("Ширина окна одного диода, доля экрана"))
         self.ds_window.valueChanged.connect(self._on_geometry_changed)
-        form.addRow("Окно диода:", self.ds_window)
+        form.addRow(tr("Окно диода:"), self.ds_window)
         return g
 
     def _group_lamp(self) -> QGroupBox:
-        g = QGroupBox("Лампа")
+        g = QGroupBox(tr("Лампа"))
         form = QFormLayout(g)
         self._lamp_form = form
 
         self.cb_lamp_effect = QComboBox()
         for value in LAMP_EFFECTS:
-            self.cb_lamp_effect.addItem(_LAMP_EFFECT_LABELS[value], value)
+            self.cb_lamp_effect.addItem(tr(_LAMP_EFFECT_LABELS[value]), value)
         self.cb_lamp_effect.setToolTip(
-            "Бегущая радуга вращается по периметру со скоростью «Скорость»,\n"
-            "статичная — неподвижное распределение оттенков вдоль ленты."
+            tr("Бегущая радуга вращается по периметру со скоростью «Скорость»,\n"
+            "статичная — неподвижное распределение оттенков вдоль ленты.")
         )
         self.cb_lamp_effect.currentIndexChanged.connect(self._on_lamp_effect_changed)
-        form.addRow("Эффект:", self.cb_lamp_effect)
+        form.addRow(tr("Эффект:"), self.cb_lamp_effect)
 
         self.btn_lamp_color = self._color_button("#ff9329")
-        form.addRow("Цвет:", self.btn_lamp_color)
+        form.addRow(tr("Цвет:"), self.btn_lamp_color)
 
         self.sl_lamp_speed, row = self._slider_row(0, 100)
         self._lamp_speed_w = self._wrap_row(row)
-        form.addRow("Скорость:", self._lamp_speed_w)
+        form.addRow(tr("Скорость:"), self._lamp_speed_w)
 
         self.gradient_editor = GradientEditor()
         self.gradient_editor.changed.connect(self._on_soft_changed)
-        form.addRow("Точки:", self.gradient_editor)
+        form.addRow(tr("Точки:"), self.gradient_editor)
 
         # настройки камина
         self.sl_fire_height, row = self._slider_row(30, 150)
         self.sl_fire_height.setToolTip(
-            "Насколько высоко достаёт пламя: меньше — тлеет у низа, больше — до верха"
+            tr("Насколько высоко достаёт пламя: меньше — тлеет у низа, больше — до верха")
         )
         self._fire_height_w = self._wrap_row(row)
-        form.addRow("Высота пламени:", self._fire_height_w)
+        form.addRow(tr("Высота пламени:"), self._fire_height_w)
 
         self.sl_fire_intensity, row = self._slider_row(20, 150)
-        self.sl_fire_intensity.setToolTip("Общая яркость пламени")
+        self.sl_fire_intensity.setToolTip(tr("Общая яркость пламени"))
         self._fire_intensity_w = self._wrap_row(row)
-        form.addRow("Интенсивность:", self._fire_intensity_w)
+        form.addRow(tr("Интенсивность:"), self._fire_intensity_w)
 
         self.sp_fire_sparks = QSpinBox()
         self.sp_fire_sparks.setRange(0, 10)
-        self.sp_fire_sparks.setToolTip("Сколько искр вспыхивает за раз (0 — без искр)")
+        self.sp_fire_sparks.setToolTip(tr("Сколько искр вспыхивает за раз (0 — без искр)"))
         self.sp_fire_sparks.valueChanged.connect(self._on_soft_changed)
-        form.addRow("Искры:", self.sp_fire_sparks)
+        form.addRow(tr("Искры:"), self.sp_fire_sparks)
 
         self._sync_lamp_rows()
         return g
 
     def _group_music(self) -> QGroupBox:
-        g = QGroupBox("Цветомузыка")
+        g = QGroupBox(tr("Цветомузыка"))
         form = QFormLayout(g)
         self._music_form = form
 
         self.cb_music_effect = QComboBox()
         for value in MUSIC_EFFECTS:
-            self.cb_music_effect.addItem(_MUSIC_EFFECT_LABELS[value], value)
+            self.cb_music_effect.addItem(tr(_MUSIC_EFFECT_LABELS[value]), value)
         self.cb_music_effect.setToolTip(
-            "Спектр: басы в начале ленты, высокие — в конце.\n"
-            "Пульс: вся лента дышит одним цветом от энергии баса."
+            tr("Спектр: басы в начале ленты, высокие — в конце.\n"
+            "Пульс: вся лента дышит одним цветом от энергии баса.")
         )
         self.cb_music_effect.currentIndexChanged.connect(self._on_music_effect_changed)
-        form.addRow("Эффект:", self.cb_music_effect)
+        form.addRow(tr("Эффект:"), self.cb_music_effect)
 
         self.btn_music_color = self._color_button("#ff2d95")
-        form.addRow("Цвет:", self.btn_music_color)
+        form.addRow(tr("Цвет:"), self.btn_music_color)
 
         self.sl_music_gain, row = self._slider_row(10, 500)
-        self.sl_music_gain.setToolTip("Чувствительность: больше — ярче реакция на звук")
-        form.addRow("Чувствительность:", self._wrap_row(row))
+        self.sl_music_gain.setToolTip(tr("Чувствительность: больше — ярче реакция на звук"))
+        form.addRow(tr("Чувствительность:"), self._wrap_row(row))
 
         self._sync_music_rows()
         return g
@@ -885,7 +890,7 @@ class MainWindow(QMainWindow):
         )
 
     def _pick_color(self, btn: QPushButton) -> None:
-        color = QColorDialog.getColor(QColor(btn.property("color_value")), self, "Цвет")
+        color = QColorDialog.getColor(QColor(btn.property("color_value")), self, tr("Цвет"))
         if color.isValid():
             self._set_button_color(btn, color.name())
             self._on_soft_changed()
@@ -893,20 +898,20 @@ class MainWindow(QMainWindow):
     # ── вкладка «Устройство» ──────────────────────────────────────────────
 
     def _group_connection(self) -> QGroupBox:
-        g = QGroupBox("Подключение")
+        g = QGroupBox(tr("Подключение"))
         form = QFormLayout(g)
         self._conn_form = form
 
         self.cb_transport = QComboBox()
         self.cb_transport.addItem("Serial (Adalight)", "serial")
-        self.cb_transport.addItem("WLED по Wi-Fi (beta)", "wled")
+        self.cb_transport.addItem(tr("WLED по Wi-Fi (beta)"), "wled")
         self.cb_transport.setToolTip(
-            "Serial — Arduino/ESP по USB.\n"
+            tr("Serial — Arduino/ESP по USB.\n"
             "WLED — лента на ESP с прошивкой WLED, по сети (UDP DRGB), "
-            "порядок каналов WLED применяет сам."
+            "порядок каналов WLED применяет сам.")
         )
         self.cb_transport.currentIndexChanged.connect(self._on_transport_changed)
-        form.addRow("Транспорт:", self.cb_transport)
+        form.addRow(tr("Транспорт:"), self.cb_transport)
 
         self.cb_port = QComboBox()
         self.cb_port.setEditable(True)
@@ -914,41 +919,41 @@ class MainWindow(QMainWindow):
         btn = QPushButton()
         btn.setIcon(icon("refresh"))
         btn.setFixedWidth(32)
-        btn.setToolTip("Обновить список портов")
+        btn.setToolTip(tr("Обновить список портов"))
         btn.clicked.connect(self._refresh_ports)
         row = QHBoxLayout()
         row.addWidget(self.cb_port, 1)
         row.addWidget(btn)
         self._port_row_w = self._wrap_row(row)
-        form.addRow("Порт:", self._port_row_w)
+        form.addRow(tr("Порт:"), self._port_row_w)
 
         self.ed_wled_host = QLineEdit()
-        self.ed_wled_host.setPlaceholderText("например, 192.168.1.42 или wled.local")
+        self.ed_wled_host.setPlaceholderText(tr("например, 192.168.1.42 или wled.local"))
         self.ed_wled_host.textChanged.connect(self._on_hard_changed)
-        form.addRow("Адрес WLED:", self.ed_wled_host)
+        form.addRow(tr("Адрес WLED:"), self.ed_wled_host)
 
         self.sp_wled_port = QSpinBox()
         self.sp_wled_port.setRange(1, 65535)
         self.sp_wled_port.setValue(21324)
-        self.sp_wled_port.setToolTip("Стандартный realtime-порт WLED — 21324")
+        self.sp_wled_port.setToolTip(tr("Стандартный realtime-порт WLED — 21324"))
         self.sp_wled_port.valueChanged.connect(self._on_hard_changed)
-        form.addRow("Порт WLED:", self.sp_wled_port)
+        form.addRow(tr("Порт WLED:"), self.sp_wled_port)
 
         self.cb_baud = QComboBox()
         self.cb_baud.setEditable(True)
         self.cb_baud.addItems(_BAUDS)
         self.cb_baud.setToolTip(
-            "115200 ограничивает частоту обновления: ~76 fps при 48 диодах, "
-            "~13 fps при 300. Поднимите скорость и здесь, и в прошивке."
+            tr("115200 ограничивает частоту обновления: ~76 fps при 48 диодах, "
+            "~13 fps при 300. Поднимите скорость и здесь, и в прошивке.")
         )
         self.cb_baud.currentTextChanged.connect(self._on_hard_changed)
-        form.addRow("Скорость:", self.cb_baud)
+        form.addRow(tr("Скорость:"), self.cb_baud)
 
         self.cb_order = QComboBox()
         self.cb_order.addItems(COLOR_ORDERS)
-        self.cb_order.setToolTip("Порядок каналов ленты: WS2812 обычно GRB")
+        self.cb_order.setToolTip(tr("Порядок каналов ленты: WS2812 обычно GRB"))
         self.cb_order.currentIndexChanged.connect(self._on_hard_changed)
-        form.addRow("Порядок цвета:", self.cb_order)
+        form.addRow(tr("Порядок цвета:"), self.cb_order)
 
         self._sync_transport_rows()
         return g
@@ -973,7 +978,7 @@ class MainWindow(QMainWindow):
             widget.setVisible(visible)
 
     def _group_leds(self) -> QGroupBox:
-        g = QGroupBox("Светодиоды")
+        g = QGroupBox(tr("Светодиоды"))
         form = QFormLayout(g)
 
         def spin() -> QSpinBox:
@@ -984,29 +989,29 @@ class MainWindow(QMainWindow):
 
         self.sp_top, self.sp_right = spin(), spin()
         self.sp_bottom, self.sp_left = spin(), spin()
-        form.addRow("Сверху:", self.sp_top)
-        form.addRow("Справа:", self.sp_right)
-        form.addRow("Снизу:", self.sp_bottom)
-        form.addRow("Слева:", self.sp_left)
+        form.addRow(tr("Сверху:"), self.sp_top)
+        form.addRow(tr("Справа:"), self.sp_right)
+        form.addRow(tr("Снизу:"), self.sp_bottom)
+        form.addRow(tr("Слева:"), self.sp_left)
 
         self.cb_corner = QComboBox()
         for value in START_CORNERS:
-            self.cb_corner.addItem(_CORNER_LABELS[value], value)
+            self.cb_corner.addItem(tr(_CORNER_LABELS[value]), value)
         self.cb_corner.setToolTip(
-            "Угол, где первый диод ленты (отмечен кольцом в предпросмотре)"
+            tr("Угол, где первый диод ленты (отмечен кольцом в предпросмотре)")
         )
         self.cb_corner.currentIndexChanged.connect(self._on_geometry_changed)
-        form.addRow("Начальный угол:", self.cb_corner)
+        form.addRow(tr("Начальный угол:"), self.cb_corner)
 
         self.cb_direction = QComboBox()
         for value in DIRECTIONS:
-            self.cb_direction.addItem(_DIRECTION_LABELS[value], value)
-        self.cb_direction.setToolTip("Куда идёт лента от первого диода (глядя на экран)")
+            self.cb_direction.addItem(tr(_DIRECTION_LABELS[value]), value)
+        self.cb_direction.setToolTip(tr("Куда идёт лента от первого диода (глядя на экран)"))
         self.cb_direction.currentIndexChanged.connect(self._on_geometry_changed)
-        form.addRow("Направление:", self.cb_direction)
+        form.addRow(tr("Направление:"), self.cb_direction)
 
-        self.ch_flip_x = QCheckBox("Инверсия лево/право")
-        self.ch_flip_y = QCheckBox("Инверсия верх/низ")
+        self.ch_flip_x = QCheckBox(tr("Инверсия лево/право"))
+        self.ch_flip_y = QCheckBox(tr("Инверсия верх/низ"))
         self.ch_flip_x.toggled.connect(self._on_geometry_changed)
         self.ch_flip_y.toggled.connect(self._on_geometry_changed)
         form.addRow(self.ch_flip_x)
@@ -1028,34 +1033,34 @@ class MainWindow(QMainWindow):
         return s, row
 
     def _group_image(self) -> QGroupBox:
-        g = QGroupBox("Изображение")
+        g = QGroupBox(tr("Изображение"))
         form = QFormLayout(g)
 
         self.sl_gamma, row = self._slider_row(50, 320)
         self.sl_gamma.setToolTip(
-            "Кривая яркости: 2.2 — стандарт; больше — глубже тени, сочнее"
+            tr("Кривая яркости: 2.2 — стандарт; больше — глубже тени, сочнее")
         )
-        form.addRow("Гамма:", row)
+        form.addRow(tr("Гамма:"), row)
         self.sl_bright, row = self._slider_row(5, 150)
         self.sl_bright.setToolTip(
-            "Основная яркость. Используется как значение «по умолчанию» "
-            "для расписания и как база для адаптивной яркости."
+            tr("Основная яркость. Используется как значение «по умолчанию» "
+            "для расписания и как база для адаптивной яркости.")
         )
-        form.addRow("Яркость:", row)
+        form.addRow(tr("Яркость:"), row)
         self.sl_sat, row = self._slider_row(0, 250)
-        self.sl_sat.setToolTip("1.00 — как на экране; больше — цвета сочнее")
-        form.addRow("Насыщенность:", row)
+        self.sl_sat.setToolTip(tr("1.00 — как на экране; больше — цвета сочнее"))
+        form.addRow(tr("Насыщенность:"), row)
         self.sl_smooth, row = self._slider_row(0, 95)
         self.sl_smooth.setToolTip(
-            "Инерция смены цвета: 0 — мгновенно, больше — плавнее (для кино)"
+            tr("Инерция смены цвета: 0 — мгновенно, больше — плавнее (для кино)")
         )
-        form.addRow("Сглаживание:", row)
+        form.addRow(tr("Сглаживание:"), row)
 
         # цветовая температура — со своим форматом подписи (K)
         self.sl_temp = QSlider(Qt.Orientation.Horizontal)
         self.sl_temp.setRange(1000, 10000)
         self.sl_temp.setSingleStep(100)
-        self.sl_temp.setToolTip("6500K — нейтрально, меньше — теплее")
+        self.sl_temp.setToolTip(tr("6500K — нейтрально, меньше — теплее"))
         lbl = QLabel()
         lbl.setFixedWidth(48)
         self.sl_temp.valueChanged.connect(lambda v: lbl.setText(f"{v}K"))
@@ -1063,77 +1068,79 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout()
         row.addWidget(self.sl_temp, 1)
         row.addWidget(lbl)
-        form.addRow("Температура:", row)
+        form.addRow(tr("Температура:"), row)
 
         self.sl_black, row = self._slider_row(0, 50)
         self.sl_black.setToolTip(
-            "Отсечка шума в тенях: сигнал ниже порога гасится в ноль"
+            tr("Отсечка шума в тенях: сигнал ниже порога гасится в ноль")
         )
-        form.addRow("Порог теней:", row)
+        form.addRow(tr("Порог теней:"), row)
 
         # баланс белого: калибровка каналов, чтобы белый на ленте был белым
         self.sl_wb_r, row = self._slider_row(20, 150)
-        form.addRow("Баланс R:", row)
+        form.addRow(tr("Баланс R:"), row)
         self.sl_wb_g, row = self._slider_row(20, 150)
-        form.addRow("Баланс G:", row)
+        form.addRow(tr("Баланс G:"), row)
         self.sl_wb_b, row = self._slider_row(20, 150)
-        form.addRow("Баланс B:", row)
+        form.addRow(tr("Баланс B:"), row)
         for s in (self.sl_wb_r, self.sl_wb_g, self.sl_wb_b):
             s.setToolTip(
-                "Множитель канала (1.00 = без изменений). Включите белую «лампу» "
-                "и подстройте, чтобы лента светила чистым белым."
+                tr("Множитель канала (1.00 = без изменений). Включите белую «лампу» "
+                "и подстройте, чтобы лента светила чистым белым.")
             )
         return g
 
     # ── вкладка «Яркость» ─────────────────────────────────────────────────
 
     def _group_adaptive(self) -> QGroupBox:
-        g = QGroupBox("Адаптивная яркость")
+        g = QGroupBox(tr("Адаптивная яркость"))
         form = QFormLayout(g)
 
-        self.ch_adaptive = QCheckBox("Подстраивать яркость под яркость изображения")
+        self.ch_adaptive = QCheckBox(tr("Подстраивать яркость под яркость изображения"))
         self.ch_adaptive.setToolTip(
-            "Тёмная сцена — лента тускнеет к «мин», яркая — разгорается к «макс». "
-            "Работает как множитель к основной яркости (или яркости из расписания)."
+            tr("Тёмная сцена — лента тускнеет к «мин», яркая — разгорается к «макс». "
+            "Работает как множитель к основной яркости (или яркости из расписания).")
         )
         self.ch_adaptive.toggled.connect(self._on_soft_changed)
         form.addRow(self.ch_adaptive)
 
         self.sl_amin, row = self._slider_row(0, 150)
-        form.addRow("Мин. коэффициент:", row)
+        form.addRow(tr("Мин. коэффициент:"), row)
         self.sl_amax, row = self._slider_row(0, 150)
-        form.addRow("Макс. коэффициент:", row)
+        form.addRow(tr("Макс. коэффициент:"), row)
         self.sl_aspeed, row = self._slider_row(1, 100)
-        self.sl_aspeed.setToolTip("Скорость реакции: больше — быстрее догоняет сцену")
-        form.addRow("Скорость:", row)
+        self.sl_aspeed.setToolTip(tr("Скорость реакции: больше — быстрее догоняет сцену"))
+        form.addRow(tr("Скорость:"), row)
         return g
 
     def _group_schedule(self) -> QGroupBox:
-        g = QGroupBox("Расписание яркости")
+        g = QGroupBox(tr("Расписание яркости"))
         lay = QVBoxLayout(g)
 
-        self.ch_schedule = QCheckBox("Включить (вне интервалов действует яркость «по умолчанию»)")
+        self.ch_schedule = QCheckBox(
+            tr("Включить (вне интервалов действует яркость «по умолчанию»)")
+        )
         self.ch_schedule.toggled.connect(self._on_soft_changed)
         lay.addWidget(self.ch_schedule)
 
         self.tbl_schedule = QTableWidget(0, 3)
-        self.tbl_schedule.setHorizontalHeaderLabels(["Начало", "Конец", "Яркость"])
+        self.tbl_schedule.setHorizontalHeaderLabels([tr("Начало"), tr("Конец"), tr("Яркость")])
         self.tbl_schedule.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Stretch
         )
         self.tbl_schedule.verticalHeader().setVisible(False)
         self.tbl_schedule.setFixedHeight(140)
         self.tbl_schedule.setToolTip(
-            "Время в формате ЧЧ:ММ, интервалы через полночь (22:00–06:00) поддерживаются"
+            tr("Время в формате ЧЧ:ММ, интервалы через полночь (22:00–06:00) поддерживаются")
         )
         self.tbl_schedule.setItemDelegate(ScheduleDelegate(self.tbl_schedule))
         self.tbl_schedule.itemChanged.connect(self._on_soft_changed)
         lay.addWidget(self.tbl_schedule)
 
         btns = QHBoxLayout()
-        btn_add = QPushButton("+ Интервал")
+        btn_add = QPushButton(tr("+ Интервал"))
         btn_add.clicked.connect(self._on_schedule_add)
-        btn_del = QPushButton("− Удалить")
+        btn_del = QPushButton(tr("− Удалить"))
         btn_del.clicked.connect(self._on_schedule_del)
         btns.addWidget(btn_add)
         btns.addWidget(btn_del)
@@ -1144,9 +1151,9 @@ class MainWindow(QMainWindow):
     # ── вкладка «Система» ─────────────────────────────────────────────────
 
     def _group_system(self) -> QGroupBox:
-        g = QGroupBox("Система")
+        g = QGroupBox(tr("Система"))
         lay = QVBoxLayout(g)
-        self.ch_autostart = QCheckBox("Запускать при входе в систему (свёрнуто в трей)")
+        self.ch_autostart = QCheckBox(tr("Запускать при входе в систему (свёрнуто в трей)"))
         if autostart.is_supported():
             try:
                 self.ch_autostart.setChecked(autostart.is_enabled())
@@ -1154,56 +1161,56 @@ class MainWindow(QMainWindow):
                 pass
         else:
             self.ch_autostart.setEnabled(False)
-            self.ch_autostart.setToolTip("Не поддерживается на этой ОС")
+            self.ch_autostart.setToolTip(tr("Не поддерживается на этой ОС"))
         self.ch_autostart.toggled.connect(self._on_autostart_toggled)
         lay.addWidget(self.ch_autostart)
 
-        self.ch_notifications = QCheckBox("Уведомления в трее")
+        self.ch_notifications = QCheckBox(tr("Уведомления в трее"))
         self.ch_notifications.setToolTip(
-            "Сообщать о включении/выключении подсветки (когда окно скрыто) "
-            "и о выходе новых версий"
+            tr("Сообщать о включении/выключении подсветки (когда окно скрыто) "
+            "и о выходе новых версий")
         )
         self.ch_notifications.toggled.connect(self._on_soft_changed)
         lay.addWidget(self.ch_notifications)
 
         row = QHBoxLayout()
-        btn_export = QPushButton("Экспорт настроек…")
-        btn_export.setToolTip("Сохранить все настройки в JSON-файл")
+        btn_export = QPushButton(tr("Экспорт настроек…"))
+        btn_export.setToolTip(tr("Сохранить все настройки в JSON-файл"))
         btn_export.clicked.connect(self._on_export)
-        btn_import = QPushButton("Импорт настроек…")
-        btn_import.setToolTip("Загрузить настройки из JSON-файла")
+        btn_import = QPushButton(tr("Импорт настроек…"))
+        btn_import.setToolTip(tr("Загрузить настройки из JSON-файла"))
         btn_import.clicked.connect(self._on_import)
         row.addWidget(btn_export)
         row.addWidget(btn_import)
         lay.addLayout(row)
 
-        btn_wizard = QPushButton("Мастер настройки…")
+        btn_wizard = QPushButton(tr("Мастер настройки…"))
         btn_wizard.setIcon(icon("wand"))
-        btn_wizard.setToolTip("Пошаговая настройка: порт → диоды → проверка сторон")
+        btn_wizard.setToolTip(tr("Пошаговая настройка: порт → диоды → проверка сторон"))
         btn_wizard.clicked.connect(self._open_wizard)
         lay.addWidget(btn_wizard)
 
         row_report = QHBoxLayout()
-        btn_bug = QPushButton("Сообщить об ошибке")
+        btn_bug = QPushButton(tr("Сообщить об ошибке"))
         btn_bug.setIcon(icon("bug"))
-        btn_bug.setToolTip("Открыть issue на GitHub с приложённой диагностикой")
+        btn_bug.setToolTip(tr("Открыть issue на GitHub с приложённой диагностикой"))
         btn_bug.clicked.connect(lambda: self._report_issue("bug"))
-        btn_idea = QPushButton("Предложить идею")
+        btn_idea = QPushButton(tr("Предложить идею"))
         btn_idea.setIcon(icon("bulb"))
-        btn_idea.setToolTip("Открыть issue на GitHub с предложением")
+        btn_idea.setToolTip(tr("Открыть issue на GitHub с предложением"))
         btn_idea.clicked.connect(lambda: self._report_issue("idea"))
         row_report.addWidget(btn_bug)
         row_report.addWidget(btn_idea)
         lay.addLayout(row_report)
 
         if FEEDBACK_FORM_URL:
-            btn_form = QPushButton("Написать через форму (без GitHub)")
+            btn_form = QPushButton(tr("Написать через форму (без GitHub)"))
             btn_form.clicked.connect(
                 lambda: QDesktopServices.openUrl(QUrl(FEEDBACK_FORM_URL))
             )
             lay.addWidget(btn_form)
 
-        btn_about = QPushButton("О программе")
+        btn_about = QPushButton(tr("О программе"))
         btn_about.clicked.connect(self._show_about)
         lay.addWidget(btn_about)
         return g
@@ -1214,13 +1221,13 @@ class MainWindow(QMainWindow):
 
         lines = [
             f"Adalight {__version__}",
-            f"ОС: {platform.platform()}",
+            f"{tr('ОС:')} {platform.platform()}",
             f"Python: {platform.python_version()}",
-            f"Транспорт: {self.cfg.transport}",
-            f"Диодов: {self.cfg.total_leds}",
+            f"{tr('Транспорт:')} {self.cfg.transport}",
+            f"{tr('Диодов:')} {self.cfg.total_leds}",
         ]
         if self._backend_info:
-            lines.append(f"Захват: {self._backend_info}")
+            lines.append(f"{tr('Захват:')} {self._backend_info}")
         return "\n".join(lines)
 
     def _report_issue(self, kind: str) -> None:
@@ -1228,11 +1235,11 @@ class MainWindow(QMainWindow):
 
         label, title, intro = _REPORT_TEMPLATES[kind]
         body = (
-            f"{intro}\n\n---\n"
-            f"_Диагностика (можно отредактировать или удалить):_\n"
+            f"{tr(intro)}\n\n---\n"
+            f"{tr('_Диагностика (можно отредактировать или удалить):_')}\n"
             f"```\n{self._diagnostics()}\n```"
         )
-        query = urlencode({"labels": label, "title": title, "body": body})
+        query = urlencode({"labels": label, "title": tr(title), "body": body})
         QDesktopServices.openUrl(
             QUrl(f"https://github.com/xvin84/Adalight/issues/new?{query}")
         )
@@ -1249,7 +1256,7 @@ class MainWindow(QMainWindow):
         self.cb_profile.blockSignals(True)
         self.cb_profile.clear()
         for name in PRESET_PROFILES:
-            self.cb_profile.addItem(icon(_PRESET_ICONS[name]), name, ("preset", name))
+            self.cb_profile.addItem(icon(_PRESET_ICONS[name]), tr(name), ("preset", name))
         users = list_profiles()
         if users:
             self.cb_profile.insertSeparator(self.cb_profile.count())
@@ -1282,7 +1289,7 @@ class MainWindow(QMainWindow):
         self.cfg = cfg
         if self.thread is not None:
             self._start_engine(self._selected_mode())
-        self._toast(f"{source}: применено и сохранено")
+        self._toast(tr("{source}: применено и сохранено").format(source=source))
 
     def _on_profile_selected(self, index: int) -> None:
         data = self.cb_profile.itemData(index)
@@ -1298,12 +1305,15 @@ class MainWindow(QMainWindow):
                 cfg = load_profile(name)
             cfg.validate()
         except (ValueError, OSError) as e:
-            QMessageBox.warning(self, "Профиль", f"Не удалось применить профиль: {e}")
+            QMessageBox.warning(
+                self, tr("Профиль"),
+                tr("Не удалось применить профиль: {e}").format(e=e),
+            )
             return
         self._refresh_profiles(select=(kind, name))
         self._settings.setValue("profile_kind", kind)
         self._settings.setValue("profile_name", name)
-        self._apply_config(cfg, f"Профиль «{name}»")
+        self._apply_config(cfg, tr("Профиль «{name}»").format(name=name))
         # базовая точка для индикатора правок — после прохода через UI,
         # чтобы округления слайдеров не считались изменениями
         self._profile_baseline = self._cfg_from_ui()
@@ -1315,20 +1325,22 @@ class MainWindow(QMainWindow):
         if not data or self._profile_baseline is None:
             self.btn_prof_update.setIcon(icon("save"))
             self.btn_prof_update.setEnabled(False)
-            self.btn_prof_update.setToolTip("Профиль не выбран")
+            self.btn_prof_update.setToolTip(tr("Профиль не выбран"))
             return
         dirty = self._cfg_from_ui() != self._profile_baseline
         kind, name = data
         self.btn_prof_update.setEnabled(dirty)
         if not dirty:
             self.btn_prof_update.setIcon(icon("save"))
-            self.btn_prof_update.setToolTip(f"Профиль «{name}» сохранён")
+            self.btn_prof_update.setToolTip(
+                tr("Профиль «{name}» сохранён").format(name=name)
+            )
         else:
             self.btn_prof_update.setIcon(icon("save", color="#e0a030"))
             self.btn_prof_update.setToolTip(
-                f"Есть несохранённые изменения — сохранить в профиль «{name}»"
+                tr("Есть несохранённые изменения — сохранить в профиль «{name}»").format(name=name)
                 if kind == "user"
-                else "Настройки отличаются от пресета — сохранить как свой профиль…"
+                else tr("Настройки отличаются от пресета — сохранить как свой профиль…")
             )
 
     def _on_profile_update(self) -> None:
@@ -1342,20 +1354,21 @@ class MainWindow(QMainWindow):
             cfg.validate()
             save_profile(name, cfg)
         except (ValueError, OSError) as e:
-            QMessageBox.warning(self, "Профиль", str(e))
+            QMessageBox.warning(self, tr("Профиль"), str(e))
             return
         self._profile_baseline = cfg
         self._update_profile_dirty()
-        self._toast(f"Профиль «{name}» обновлён")
+        self._toast(tr("Профиль «{name}» обновлён").format(name=name))
 
     def _on_profile_save(self) -> None:
-        name, ok = QInputDialog.getText(self, "Профиль", "Имя профиля:")
+        name, ok = QInputDialog.getText(self, tr("Профиль"), tr("Имя профиля:"))
         if not ok or not name.strip():
             return
         name = name.strip()
         if name in PRESET_PROFILES:
             QMessageBox.warning(
-                self, "Профиль", f"«{name}» — встроенный пресет, выберите другое имя."
+                self, tr("Профиль"),
+                tr("«{name}» — встроенный пресет, выберите другое имя.").format(name=name),
             )
             return
         cfg = self._cfg_from_ui()
@@ -1363,14 +1376,14 @@ class MainWindow(QMainWindow):
             cfg.validate()
             save_profile(name, cfg)
         except (ValueError, OSError) as e:
-            QMessageBox.warning(self, "Профиль", str(e))
+            QMessageBox.warning(self, tr("Профиль"), str(e))
             return
         self._refresh_profiles(select=("user", name))
         self._settings.setValue("profile_kind", "user")
         self._settings.setValue("profile_name", name)
         self._profile_baseline = self._cfg_from_ui()
         self._update_profile_dirty()
-        self._toast(f"Профиль «{name}» сохранён")
+        self._toast(tr("Профиль «{name}» сохранён").format(name=name))
 
     def _on_profile_delete(self) -> None:
         data = self.cb_profile.currentData()
@@ -1379,36 +1392,36 @@ class MainWindow(QMainWindow):
         kind, name = data
         if kind == "preset":
             QMessageBox.information(
-                self, "Профиль", "Встроенные пресеты удалить нельзя."
+                self, tr("Профиль"), tr("Встроенные пресеты удалить нельзя.")
             )
             return
         answer = QMessageBox.question(
-            self, "Профиль", f"Удалить профиль «{name}»?"
+            self, tr("Профиль"), tr("Удалить профиль «{name}»?").format(name=name)
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
         delete_profile(name)
         self._refresh_profiles()
-        self._toast(f"Профиль «{name}» удалён")
+        self._toast(tr("Профиль «{name}» удалён").format(name=name))
 
     def _on_export(self) -> None:
         cfg = self._cfg_from_ui()
         try:
             cfg.validate()
         except ValueError as e:
-            QMessageBox.warning(self, "Экспорт", str(e))
+            QMessageBox.warning(self, tr("Экспорт"), str(e))
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, "Экспорт настроек", "adalight-config.json", "JSON (*.json)"
+            self, tr("Экспорт настроек"), "adalight-config.json", "JSON (*.json)"
         )
         if not path:
             return
         cfg.save(Path(path))
-        self._toast("Настройки экспортированы")
+        self._toast(tr("Настройки экспортированы"))
 
     def _on_import(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Импорт настроек", "", "JSON (*.json)"
+            self, tr("Импорт настроек"), "", "JSON (*.json)"
         )
         if not path:
             return
@@ -1416,18 +1429,21 @@ class MainWindow(QMainWindow):
             cfg = Config.load(Path(path))
             cfg.validate()
         except (ValueError, OSError) as e:
-            QMessageBox.warning(self, "Импорт", f"Не удалось загрузить настройки: {e}")
+            QMessageBox.warning(
+                self, tr("Импорт"),
+                tr("Не удалось загрузить настройки: {e}").format(e=e),
+            )
             return
-        self._apply_config(cfg, "Импорт")
+        self._apply_config(cfg, tr("Импорт"))
 
     # ── вкладка «Плагины» ─────────────────────────────────────────────────
 
     def _plugins_tab_content(self) -> list[QWidget]:
         intro = QLabel(
-            "Плагины расширяют Adalight. Свой плагин — это .py-файл с функцией "
+            tr("Плагины расширяют Adalight. Свой плагин — это .py-файл с функцией "
             "create_plugin() в папке плагинов; шаблон и документация — "
             '<a href="https://github.com/xvin84/Adalight/blob/main/docs/PLUGINS.md">'
-            "docs/PLUGINS.md</a>."
+            "docs/PLUGINS.md</a>.")
         )
         intro.setWordWrap(True)
         intro.setOpenExternalLinks(True)
@@ -1436,7 +1452,7 @@ class MainWindow(QMainWindow):
         self.lbl_plugins_summary.setObjectName("heroSub")
         self.lbl_plugins_summary.setWordWrap(True)
 
-        btn = QPushButton("Открыть менеджер плагинов…")
+        btn = QPushButton(tr("Открыть менеджер плагинов…"))
         btn.setIcon(icon("plug"))
         btn.clicked.connect(self._open_plugin_manager)
 
@@ -1449,9 +1465,11 @@ class MainWindow(QMainWindow):
             1 for p in plugins if self._plugins_cfg.get(p.name, {}).get("enabled")
         )
         errors = sum(1 for p in plugins if p.error)
-        text = f"Плагинов: {len(plugins)} · включено: {enabled}"
+        text = tr("Плагинов: {total} · включено: {on}").format(
+            total=len(plugins), on=enabled
+        )
         if errors:
-            text += f" · с ошибками: {errors}"
+            text += tr(" · с ошибками: {n}").format(n=errors)
         self.lbl_plugins_summary.setText(text)
 
     def _open_plugin_manager(self) -> None:
@@ -1489,7 +1507,7 @@ class MainWindow(QMainWindow):
 
     def flash_test(self, entry: dict) -> None:
         if self.thread is None or self._mode not in _MAIN_MODES:
-            self._toast("Запустите подсветку, чтобы увидеть вспышку")
+            self._toast(tr("Запустите подсветку, чтобы увидеть вспышку"))
             return
         self.thread.add_overlay(
             entry.get("telegram_color", "#4fc3f7"),
@@ -1524,21 +1542,24 @@ class MainWindow(QMainWindow):
         if entry.kind == "community":
             answer = QMessageBox.question(
                 parent,
-                "Плагин сообщества",
-                f"«{entry.title}» создан сообществом, а не автором Adalight.\n"
-                "Плагин — это код, который будет выполняться на вашем компьютере.\n"
-                "Установить?",
+                tr("Плагин сообщества"),
+                tr("«{title}» создан сообществом, а не автором Adalight.\n"
+                   "Плагин — это код, который будет выполняться на вашем компьютере.\n"
+                   "Установить?").format(title=entry.title),
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return False
         try:
             cat.install(entry)
         except (OSError, ValueError) as e:
-            QMessageBox.warning(parent, "Каталог", f"Не удалось установить: {e}")
+            QMessageBox.warning(
+                parent, tr("Каталог"),
+                tr("Не удалось установить: {e}").format(e=e),
+            )
             return False
         self._toast(
-            f"«{entry.title}» установлен — перезапустите программу, "
-            "чтобы плагин появился в списке"
+            tr("«{title}» установлен — перезапустите программу, "
+               "чтобы плагин появился в списке").format(title=entry.title)
         )
         return True
 
@@ -1548,7 +1569,10 @@ class MainWindow(QMainWindow):
         try:
             loaded.path.unlink()
         except OSError as e:
-            QMessageBox.warning(self, "Плагины", f"Не удалось удалить: {e}")
+            QMessageBox.warning(
+                self, tr("Плагины"),
+                tr("Не удалось удалить: {e}").format(e=e),
+            )
             return False
         self._plugins_cfg.pop(loaded.name, None)
         self.plugin_manager.apply(self._plugins_cfg)  # остановит, если работал
@@ -1556,7 +1580,7 @@ class MainWindow(QMainWindow):
             p for p in self.plugin_manager.plugins if p is not loaded
         ]
         self._refresh_plugins_summary()
-        self._toast(f"«{loaded.title}» удалён")
+        self._toast(tr("«{title}» удалён").format(title=loaded.title))
         return True
 
     def _plugins_cfg_from_ui(self) -> dict:
@@ -1578,15 +1602,44 @@ class MainWindow(QMainWindow):
             thread.add_overlay(color, x, y, radius, duration, style)
 
     def _group_appearance(self) -> QGroupBox:
-        g = QGroupBox("Внешний вид")
+        g = QGroupBox(tr("Внешний вид"))
         form = QFormLayout(g)
         self.cb_theme = QComboBox()
         for value in _THEMES:
-            self.cb_theme.addItem(_THEME_LABELS[value], value)
-        self.cb_theme.setToolTip("Применяется сразу, без перезапуска")
+            self.cb_theme.addItem(tr(_THEME_LABELS[value]), value)
+        self.cb_theme.setToolTip(tr("Применяется сразу, без перезапуска"))
         self.cb_theme.currentIndexChanged.connect(self._on_theme_changed)
-        form.addRow("Тема:", self.cb_theme)
+        form.addRow(tr("Тема:"), self.cb_theme)
+
+        self.cb_language = QComboBox()
+        for code, name in available_languages():
+            self.cb_language.addItem(name, code)
+        self.cb_language.setToolTip(
+            tr("Язык интерфейса. Новые языки ставятся как плагины-локали.")
+        )
+        self.cb_language.currentIndexChanged.connect(self._on_language_changed)
+        form.addRow(tr("Язык:"), self.cb_language)
         return g
+
+    def _register_locales(self) -> None:
+        from ..locales import builtin_locales
+        from ..plugins.manager import discover_locales
+
+        for code, name, mapping in builtin_locales():
+            register_language(code, name, mapping)
+        for loc in discover_locales():
+            register_language(loc.code, loc.name, loc.translations)
+
+    def _on_language_changed(self, *args) -> None:
+        if self._loading:
+            return
+        code = self.cb_language.currentData()
+        if code == self.cfg.language:
+            return
+        self.cfg.language = code
+        self.cfg.save()
+        set_language(code)
+        self._toast(tr("Язык сменится после перезапуска программы"))
 
     def _on_theme_changed(self, *args) -> None:
         if self._loading:
@@ -1602,24 +1655,24 @@ class MainWindow(QMainWindow):
         self._on_soft_changed()
 
     def _group_updates(self) -> QGroupBox:
-        g = QGroupBox("Обновления")
+        g = QGroupBox(tr("Обновления"))
         lay = QVBoxLayout(g)
-        self.lbl_update = QLabel(f"Текущая версия: {__version__}")
+        self.lbl_update = QLabel(tr("Текущая версия: {v}").format(v=__version__))
         lay.addWidget(self.lbl_update)
-        self.ch_auto_update = QCheckBox("Обновляться автоматически при запуске")
+        self.ch_auto_update = QCheckBox(tr("Обновляться автоматически при запуске"))
         self.ch_auto_update.setToolTip(
-            "Если при старте программы найдена новая версия — она тихо скачается "
-            "и установится с перезапуском (уведомление придёт в трей)."
+            tr("Если при старте программы найдена новая версия — она тихо скачается "
+            "и установится с перезапуском (уведомление придёт в трей).")
         )
         self.ch_auto_update.toggled.connect(self._on_soft_changed)
         lay.addWidget(self.ch_auto_update)
-        self.btn_update = QPushButton("Проверить обновления")
+        self.btn_update = QPushButton(tr("Проверить обновления"))
         self.btn_update.clicked.connect(self._on_update_button)
         lay.addWidget(self.btn_update)
         return g
 
     def _show_about(self) -> None:
-        QMessageBox.about(self, "О программе", _ABOUT_HTML)
+        QMessageBox.about(self, tr("О программе"), _about_html())
 
     # ── обновления ────────────────────────────────────────────────────────
 
@@ -1635,24 +1688,26 @@ class MainWindow(QMainWindow):
         if not silent:
             # тихие сбои сети игнорируем — следующая попытка через 30 минут
             self._update_thread.failed.connect(self._on_update_check_failed)
-            self.lbl_update.setText("Проверяю…")
+            self.lbl_update.setText(tr("Проверяю…"))
         self._update_thread.start()
 
     def _on_update_check_failed(self, message: str) -> None:
-        self.lbl_update.setText("Не удалось связаться с GitHub — попробуйте позже")
+        self.lbl_update.setText(tr("Не удалось связаться с GitHub — попробуйте позже"))
         self.lbl_update.setToolTip(message)
 
     def _on_update_result(self, version: str, page_url: str, asset_url: str) -> None:
         self.lbl_update.setToolTip("")
         if not updates.is_newer(version, __version__):
-            self.lbl_update.setText(f"Текущая версия: {__version__} — последняя")
+            self.lbl_update.setText(
+                tr("Текущая версия: {v} — последняя").format(v=__version__)
+            )
             return
         self._update_version = version
         self._update_page_url = page_url
         self._update_asset_url = asset_url
-        self.lbl_update.setText(f"Доступна версия {version}")
-        self.btn_update.setText(f"⬇ Обновить до v{version}")
-        self.btn_update_bar.setText(f"⬇ Доступна v{version}")
+        self.lbl_update.setText(tr("Доступна версия {v}").format(v=version))
+        self.btn_update.setText(tr("⬇ Обновить до v{v}").format(v=version))
+        self.btn_update_bar.setText(tr("⬇ Доступна v{v}").format(v=version))
         self.btn_update_bar.setVisible(True)
 
         # автообновление: только при первом чеке после запуска, чтобы не
@@ -1665,7 +1720,10 @@ class MainWindow(QMainWindow):
         ):
             self._startup_check = False
             self._auto_updating = True
-            self._notify(f"Обновляюсь до версии {version}", "Программа перезапустится сама.")
+            self._notify(
+                tr("Обновляюсь до версии {v}").format(v=version),
+                tr("Программа перезапустится сама."),
+            )
             self._start_update()
             return
         self._startup_check = False
@@ -1673,8 +1731,8 @@ class MainWindow(QMainWindow):
         if version != self._notified_version:
             self._notified_version = version
             self._notify(
-                f"Доступна версия {version}",
-                "Откройте окно и нажмите кнопку обновления в правом нижнем углу.",
+                tr("Доступна версия {v}").format(v=version),
+                tr("Откройте окно и нажмите кнопку обновления в правом нижнем углу."),
             )
 
     def _start_update(self) -> None:
@@ -1697,7 +1755,7 @@ class MainWindow(QMainWindow):
         self._dl_thread.start()
 
     def _on_update_progress(self, pct: int) -> None:
-        text = f"Скачивание… {pct}%" if pct >= 0 else "Скачивание…"
+        text = tr("Скачивание… {pct}%").format(pct=pct) if pct >= 0 else tr("Скачивание…")
         self.btn_update.setText(text)
         self.btn_update_bar.setText(f"⬇ {pct}%" if pct >= 0 else "⬇ …")
 
@@ -1719,16 +1777,22 @@ class MainWindow(QMainWindow):
     def _confirm_and_restart(self) -> None:
         answer = QMessageBox.question(
             self,
-            "Обновление",
-            f"Версия {self._update_version} скачана.\nПерезапустить приложение сейчас?",
+            tr("Обновление"),
+            tr("Версия {v} скачана.\nПерезапустить приложение сейчас?").format(
+                v=self._update_version
+            ),
         )
         if answer != QMessageBox.StandardButton.Yes:
             # файл сохранён — при следующем клике перезапустим без скачивания
             self.btn_update.setEnabled(True)
             self.btn_update_bar.setEnabled(True)
-            self.btn_update.setText(f"↻ Перезапустить для v{self._update_version}")
-            self.btn_update_bar.setText(f"↻ v{self._update_version} готова")
-            self._toast("Обновление скачано — перезапустите, когда будет удобно")
+            self.btn_update.setText(
+                tr("↻ Перезапустить для v{v}").format(v=self._update_version)
+            )
+            self.btn_update_bar.setText(
+                tr("↻ v{v} готова").format(v=self._update_version)
+            )
+            self._toast(tr("Обновление скачано — перезапустите, когда будет удобно"))
             return
         self._stop_engine()
         try:
@@ -1743,12 +1807,14 @@ class MainWindow(QMainWindow):
         self._auto_updating = False
         self.btn_update.setEnabled(True)
         self.btn_update_bar.setEnabled(True)
-        self.btn_update.setText(f"⬇ Обновить до v{self._update_version}")
-        self.btn_update_bar.setText(f"⬇ Доступна v{self._update_version}")
+        self.btn_update.setText(tr("⬇ Обновить до v{v}").format(v=self._update_version))
+        self.btn_update_bar.setText(tr("⬇ Доступна v{v}").format(v=self._update_version))
         QMessageBox.warning(
             self,
-            "Обновление",
-            f"Автообновление не удалось: {message}\nОткрою страницу релиза.",
+            tr("Обновление"),
+            tr("Автообновление не удалось: {msg}\nОткрою страницу релиза.").format(
+                msg=message
+            ),
         )
         QDesktopServices.openUrl(QUrl(self._update_page_url))
 
@@ -1760,27 +1826,27 @@ class MainWindow(QMainWindow):
             return
         self.tray = QSystemTrayIcon(app_icon(), self)
         menu = QMenu()
-        act_show = QAction("Показать окно", menu)
+        act_show = QAction(tr("Показать окно"), menu)
         act_show.triggered.connect(self._show_from_tray)
-        act_start = QAction("Старт/Стоп", menu)
+        act_start = QAction(tr("Старт/Стоп"), menu)
         act_start.triggered.connect(self._on_start_stop)
-        act_night = QAction("Ночной режим", menu)
+        act_night = QAction(tr("Ночной режим"), menu)
         act_night.setCheckable(True)
         act_night.setChecked(self.btn_night.isChecked())
         act_night.toggled.connect(self.btn_night.setChecked)
         self.btn_night.toggled.connect(act_night.setChecked)
-        profiles_menu = QMenu("Профили", menu)
+        profiles_menu = QMenu(tr("Профили"), menu)
         profiles_menu.aboutToShow.connect(
             lambda: self._fill_tray_profiles(profiles_menu)
         )
-        effects_menu = QMenu("Эффекты", menu)
+        effects_menu = QMenu(tr("Эффекты"), menu)
         for effect, label in _LAMP_EFFECT_LABELS.items():
             effects_menu.addAction(
-                label, lambda e=effect: self._quick_lamp_effect(e)
+                tr(label), lambda e=effect: self._quick_lamp_effect(e)
             )
-        act_about = QAction("О программе", menu)
+        act_about = QAction(tr("О программе"), menu)
         act_about.triggered.connect(self._show_about)
-        act_quit = QAction("Выход", menu)
+        act_quit = QAction(tr("Выход"), menu)
         act_quit.triggered.connect(self._quit)
         menu.addAction(act_show)
         menu.addAction(act_start)
@@ -1845,6 +1911,8 @@ class MainWindow(QMainWindow):
         self.btn_night.setChecked(cfg.night_mode)
 
         self.cb_theme.setCurrentIndex(_THEMES.index(cfg.theme))
+        lang_idx = self.cb_language.findData(cfg.language)
+        self.cb_language.setCurrentIndex(lang_idx if lang_idx >= 0 else 0)
         self.ch_preview_screen.setChecked(cfg.preview_screen)
         self.ch_preview_zones.setChecked(cfg.preview_zones)
         self.ch_notifications.setChecked(cfg.notifications)
@@ -1961,7 +2029,7 @@ class MainWindow(QMainWindow):
         was_loading, self._loading = self._loading, True
         current = self.cb_output.currentText()
         self.cb_output.clear()
-        self.cb_output.addItem("(основной)", "")
+        self.cb_output.addItem(tr("(основной)"), "")
         for value, label in list_outputs():
             self.cb_output.addItem(label, value)
         if current:
@@ -2033,12 +2101,16 @@ class MainWindow(QMainWindow):
             return
         self._apply_left = _APPLY_DELAY_S
         self._apply_timer.start()
-        self.lbl_pending.setText(f"⏱ автоприменение через {self._apply_left} с")
+        self.lbl_pending.setText(
+            tr("⏱ автоприменение через {n} с").format(n=self._apply_left)
+        )
 
     def _tick_apply(self) -> None:
         self._apply_left -= 1
         if self._apply_left > 0:
-            self.lbl_pending.setText(f"⏱ автоприменение через {self._apply_left} с")
+            self.lbl_pending.setText(
+            tr("⏱ автоприменение через {n} с").format(n=self._apply_left)
+        )
             return
         self._cancel_pending_apply()
         self._start_engine(self._selected_mode())
@@ -2088,7 +2160,7 @@ class MainWindow(QMainWindow):
             music_gain=cfg.music_gain,
             preview_screen=cfg.preview_screen,
         )
-        self.statusBar().showMessage("Применено", 1200)
+        self.statusBar().showMessage(tr("Применено"), 1200)
 
     # ── управление движком ────────────────────────────────────────────────
 
@@ -2104,7 +2176,7 @@ class MainWindow(QMainWindow):
         try:
             cfg.validate()
         except ValueError as e:
-            QMessageBox.warning(self, "Настройки", str(e))
+            QMessageBox.warning(self, tr("Настройки"), str(e))
             return
 
         self._mode = mode
@@ -2119,22 +2191,25 @@ class MainWindow(QMainWindow):
         self.thread.start()
 
         names = {
-            "live": "Подсветка",
-            "lamp": "Лампа",
-            "music": "Цветомузыка",
-            "sides": "Тест сторон",
-            "chase": "Бегущий диод",
-            "off": "Гашение",
+            "live": tr("Подсветка"),
+            "lamp": tr("Лампа"),
+            "music": tr("Цветомузыка"),
+            "sides": tr("Тест сторон"),
+            "chase": tr("Бегущий диод"),
+            "off": tr("Гашение"),
         }
         self.lbl_state.setText(names[mode])
         self._backend_info = ""
         self._fps_text = ""
-        self.lbl_hero_sub.setText("Запуск…")
+        self.lbl_hero_sub.setText(tr("Запуск…"))
         self._set_hero_dot("#2ecc71")
         self._dot_pulse.start()
         if mode in _MAIN_MODES and self.isHidden():
-            self._notify("Подсветка включена", f"Режим: {names[mode]}")
-        self.btn_start.setText("■ Стоп")
+            self._notify(
+                tr("Подсветка включена"),
+                tr("Режим: {mode}").format(mode=names[mode]),
+            )
+        self.btn_start.setText(tr("■ Стоп"))
         self.btn_start.setStyleSheet(_BTN_STOP_QSS)
         self.btn_apply.setEnabled(mode in _MAIN_MODES)
 
@@ -2159,9 +2234,9 @@ class MainWindow(QMainWindow):
         prev_mode = self._mode
         self._mode = None
         if notify and prev_mode in _MAIN_MODES and self.isHidden():
-            self._notify("Подсветка выключена", "Лента погашена.")
-        self.lbl_state.setText("Остановлено")
-        self.lbl_hero_sub.setText("Нажмите «Старт», чтобы включить подсветку")
+            self._notify(tr("Подсветка выключена"), tr("Лента погашена."))
+        self.lbl_state.setText(tr("Остановлено"))
+        self.lbl_hero_sub.setText(tr("Нажмите «Старт», чтобы включить подсветку"))
         self._set_hero_dot("#6a6d73")
         self._dot_pulse.stop()
         effect = self.lbl_hero_dot.graphicsEffect()
@@ -2169,7 +2244,7 @@ class MainWindow(QMainWindow):
             effect.setProperty("opacity", 1.0)
         self._backend_info = ""
         self._fps_text = ""
-        self.btn_start.setText("▶ Старт")
+        self.btn_start.setText(tr("▶ Старт"))
         self.btn_start.setStyleSheet(_BTN_START_QSS)
         self.btn_apply.setEnabled(False)
         self.preview.clear_frame()
@@ -2187,12 +2262,14 @@ class MainWindow(QMainWindow):
             # автозапуск при входе в систему: порт/монитор могли ещё не проснуться —
             # повторяем каждые 10 секунд вместо модальной ошибки в скрытом окне
             self._boot_retry += 1
-            self.lbl_state.setText(f"Ожидание устройства… (попытка {self._boot_retry})")
+            self.lbl_state.setText(
+                tr("Ожидание устройства… (попытка {n})").format(n=self._boot_retry)
+            )
             if self.tray is not None and self._boot_retry == 1:
                 self.tray.showMessage(
                     "Adalight",
-                    f"Пока не получилось запустить ({message}). "
-                    "Пробую снова каждые 10 секунд.",
+                    tr("Пока не получилось запустить ({msg}). "
+                       "Пробую снова каждые 10 секунд.").format(msg=message),
                 )
             QTimer.singleShot(_BOOT_RETRY_DELAY_MS, self._retry_boot)
             return
@@ -2204,31 +2281,31 @@ class MainWindow(QMainWindow):
         low = message.lower()
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Critical)
-        box.setWindowTitle("Ошибка")
-        if "порт" in low or "serial" in low:
-            box.setText("Не удалось подключиться к устройству.")
+        box.setWindowTitle(tr("Ошибка"))
+        if tr("порт") in low or "serial" in low:
+            box.setText(tr("Не удалось подключиться к устройству."))
             box.setInformativeText(
-                "• Проверьте USB-кабель (бывают кабели «только зарядка»)\n"
+                tr("• Проверьте USB-кабель (бывают кабели «только зарядка»)\n"
                 "• Выберите другой порт: Устройство → Порт → кнопка обновления\n"
                 "• Порт может быть занят другой программой — закройте её\n"
-                "• Скорость должна совпадать с прошивкой"
+                "• Скорость должна совпадать с прошивкой")
             )
-        elif any(w in low for w in ("захват", "монитор", "кадр", "dxcam", "bettercam",
+        elif any(w in low for w in (tr("захват"), tr("монитор"), tr("кадр"), "dxcam", "bettercam",
                                     "mss", "wf-recorder", "grim")):
-            box.setText("Не удалось захватить экран.")
+            box.setText(tr("Не удалось захватить экран."))
             box.setInformativeText(
-                "• Попробуйте другой бэкенд: Режим → Бэкенд\n"
+                tr("• Попробуйте другой бэкенд: Режим → Бэкенд\n"
                 "• Проверьте номер монитора\n"
-                "• На Wayland нужен установленный wf-recorder"
+                "• На Wayland нужен установленный wf-recorder")
             )
-        elif any(w in low for w in ("звук", "loopback", "soundcard", "аудио")):
-            box.setText("Не удалось захватить системный звук.")
+        elif any(w in low for w in (tr("звук"), "loopback", "soundcard", tr("аудио"))):
+            box.setText(tr("Не удалось захватить системный звук."))
             box.setInformativeText(
-                "• Проверьте, что в системе выбрано устройство вывода звука\n"
-                "• Включите музыку и попробуйте ещё раз"
+                tr("• Проверьте, что в системе выбрано устройство вывода звука\n"
+                "• Включите музыку и попробуйте ещё раз")
             )
         else:
-            box.setText("Что-то пошло не так.")
+            box.setText(tr("Что-то пошло не так."))
         box.setDetailedText(message)
         box.exec()
 
@@ -2256,23 +2333,26 @@ class MainWindow(QMainWindow):
             else:
                 autostart.disable()
         except OSError as e:
-            QMessageBox.warning(self, "Автозапуск", f"Не удалось изменить автозапуск: {e}")
+            QMessageBox.warning(
+                self, tr("Автозапуск"),
+                tr("Не удалось изменить автозапуск: {e}").format(e=e),
+            )
             self.ch_autostart.blockSignals(True)
             self.ch_autostart.setChecked(not enabled)
             self.ch_autostart.blockSignals(False)
             return
-        self._toast("Автозапуск включён" if enabled else "Автозапуск выключен")
+        self._toast(tr("Автозапуск включён") if enabled else tr("Автозапуск выключен"))
 
     def _on_save(self) -> None:
         cfg = self._cfg_from_ui()
         try:
             cfg.validate()
         except ValueError as e:
-            QMessageBox.warning(self, "Настройки", str(e))
+            QMessageBox.warning(self, tr("Настройки"), str(e))
             return
         cfg.save()
         self.cfg = cfg
-        self._toast("Настройки сохранены")
+        self._toast(tr("Настройки сохранены"))
 
     def _quick_lamp_effect(self, effect: str) -> None:
         """Из трея: включить лампу с выбранным эффектом одним кликом."""
@@ -2289,7 +2369,7 @@ class MainWindow(QMainWindow):
         for name in PRESET_PROFILES:
             menu.addAction(
                 icon(_PRESET_ICONS[name]),
-                name,
+                tr(name),
                 lambda n=name: self._select_profile("preset", n),
             )
         users = list_profiles()
@@ -2319,7 +2399,7 @@ class MainWindow(QMainWindow):
                 self._tray_tip_shown = True
                 self.tray.showMessage(
                     "Adalight",
-                    "Приложение продолжает работать в трее. Выход — через меню трея.",
+                    tr("Приложение продолжает работать в трее. Выход — через меню трея."),
                 )
             return
         self._stop_engine()

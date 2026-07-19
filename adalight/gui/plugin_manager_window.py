@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..i18n import tr
 from ..plugins import schema_defaults
 from .icons import icon
 from .notification_settings import NotificationSettingsWidget
@@ -40,15 +41,15 @@ class PluginManagerWindow(QDialog):
         self._loading = False
         self._settings_widget: QWidget | None = None
         self._catalog_entries: list = []
-        self.setWindowTitle("Плагины")
+        self.setWindowTitle(tr("Плагины"))
         self.setMinimumSize(760, 500)
 
         root = QVBoxLayout(self)
 
         # переключатель видов
         seg = QHBoxLayout()
-        self.btn_installed = QPushButton("Установленные")
-        self.btn_catalog = QPushButton("Каталог")
+        self.btn_installed = QPushButton(tr("Установленные"))
+        self.btn_catalog = QPushButton(tr("Каталог"))
         group = QButtonGroup(self)
         for i, btn in enumerate((self.btn_installed, self.btn_catalog)):
             btn.setCheckable(True)
@@ -88,7 +89,7 @@ class PluginManagerWindow(QDialog):
         self.lbl_meta.setObjectName("heroSub")
         self.lbl_desc = QLabel()
         self.lbl_desc.setWordWrap(True)
-        self.ch_enabled = QCheckBox("Включён")
+        self.ch_enabled = QCheckBox(tr("Включён"))
         self.ch_enabled.toggled.connect(self._on_enabled_toggled)
         self.lbl_err = QLabel()
         self.lbl_err.setWordWrap(True)
@@ -103,9 +104,9 @@ class PluginManagerWindow(QDialog):
         self.detail.addStretch(1)
 
         bottom = QHBoxLayout()
-        btn_dir = QPushButton("Открыть папку плагинов")
+        btn_dir = QPushButton(tr("Открыть папку плагинов"))
         btn_dir.clicked.connect(self.ctrl.open_plugins_dir)
-        self.btn_delete = QPushButton("Удалить")
+        self.btn_delete = QPushButton(tr("Удалить"))
         self.btn_delete.setIcon(icon("trash"))
         self.btn_delete.clicked.connect(self._on_delete)
         bottom.addWidget(btn_dir)
@@ -123,7 +124,7 @@ class PluginManagerWindow(QDialog):
         for loaded in self.ctrl.manager.plugins:
             enabled = bool(cfg.get(loaded.name, {}).get("enabled", False))
             mark = "⚠" if loaded.error else ("●" if enabled else "○")
-            item = QListWidgetItem(f"{mark}  {loaded.title}")
+            item = QListWidgetItem(f"{mark}  {tr(loaded.title)}")
             item.setData(Qt.ItemDataRole.UserRole, loaded.name)
             self.list.addItem(item)
         if self.list.count():
@@ -141,15 +142,15 @@ class PluginManagerWindow(QDialog):
         if loaded is None:
             return
         self._loading = True
-        badge = "встроенный" if loaded.builtin else "установленный"
+        badge = tr("встроенный") if loaded.builtin else tr("установленный")
         ver = f" · v{loaded.version}" if loaded.version else ""
-        self.lbl_title.setText(loaded.title)
+        self.lbl_title.setText(tr(loaded.title))
         self.lbl_meta.setText(f"{badge}{ver}")
-        self.lbl_desc.setText(loaded.description or loaded.name)
+        self.lbl_desc.setText(tr(loaded.description) if loaded.description else loaded.name)
         self.btn_delete.setVisible(not loaded.builtin and loaded.path is not None)
 
         if loaded.error:
-            self.lbl_err.setText(f"⚠ Ошибка: {loaded.error}")
+            self.lbl_err.setText(tr("⚠ Ошибка: {e}").format(e=loaded.error))
             self.lbl_err.show()
         else:
             self.lbl_err.hide()
@@ -185,7 +186,7 @@ class PluginManagerWindow(QDialog):
                 form.changed.connect(self._on_settings_changed)
                 widget = form
         if widget is None:
-            widget = QLabel("У этого плагина нет настроек.")
+            widget = QLabel(tr("У этого плагина нет настроек."))
             widget.setObjectName("heroSub")
         self._settings_widget = widget
         self.settings_host.addWidget(widget)
@@ -211,7 +212,7 @@ class PluginManagerWindow(QDialog):
         if loaded is not None:  # обновить значок ●/○ в списке
             item = self.list.currentItem()
             mark = "⚠" if loaded.error else ("●" if _checked else "○")
-            item.setText(f"{mark}  {loaded.title}")
+            item.setText(f"{mark}  {tr(loaded.title)}")
 
     def _on_settings_changed(self) -> None:
         if self._loading:
@@ -223,8 +224,10 @@ class PluginManagerWindow(QDialog):
         if loaded is None or loaded.path is None:
             return
         if QMessageBox.question(
-            self, "Удалить плагин",
-            f"Удалить файл плагина «{loaded.title}»?\n{loaded.path}",
+            self, tr("Удалить плагин"),
+            tr("Удалить файл плагина «{title}»?\n{path}").format(
+                title=loaded.title, path=loaded.path
+            ),
         ) != QMessageBox.StandardButton.Yes:
             return
         if self.ctrl.delete_plugin(loaded):
@@ -239,10 +242,10 @@ class PluginManagerWindow(QDialog):
 
         top = QHBoxLayout()
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Поиск плагинов…")
+        self.search.setPlaceholderText(tr("Поиск плагинов…"))
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._render_catalog)
-        self.btn_reload = QPushButton("Загрузить")
+        self.btn_reload = QPushButton(tr("Загрузить"))
         self.btn_reload.setIcon(icon("refresh"))
         self.btn_reload.clicked.connect(self._load_catalog)
         top.addWidget(self.search, 1)
@@ -250,8 +253,8 @@ class PluginManagerWindow(QDialog):
         lay.addLayout(top)
 
         warn = QLabel(
-            "Плагин — это код, который выполняется на вашем компьютере. "
-            "Ставьте только то, чему доверяете."
+            tr("Плагин — это код, который выполняется на вашем компьютере. "
+            "Ставьте только то, чему доверяете.")
         )
         warn.setWordWrap(True)
         warn.setObjectName("hintLabel")
@@ -265,25 +268,27 @@ class PluginManagerWindow(QDialog):
         self.catalog_scroll.setWidget(self.catalog_host)
         lay.addWidget(self.catalog_scroll, 1)
 
-        self.catalog_status = QLabel("Нажмите «Загрузить», чтобы получить список.")
+        self.catalog_status = QLabel(tr("Нажмите «Загрузить», чтобы получить список."))
         self.catalog_status.setObjectName("heroSub")
         lay.addWidget(self.catalog_status)
         return page
 
     def _load_catalog(self) -> None:
         self.btn_reload.setEnabled(False)
-        self.catalog_status.setText("Загружаю каталог…")
+        self.catalog_status.setText(tr("Загружаю каталог…"))
         self.ctrl.fetch_catalog(self._on_catalog_loaded, self._on_catalog_failed)
 
     def _on_catalog_failed(self, message: str) -> None:
         self.btn_reload.setEnabled(True)
-        self.catalog_status.setText(f"Каталог недоступен: {message}")
+        self.catalog_status.setText(tr("Каталог недоступен: {msg}").format(msg=message))
 
     def _on_catalog_loaded(self, entries: list) -> None:
         self.btn_reload.setEnabled(True)
-        self.btn_reload.setText("Обновить")
+        self.btn_reload.setText(tr("Обновить"))
         self._catalog_entries = entries
-        self.catalog_status.setText(f"Плагинов в каталоге: {len(entries)}")
+        self.catalog_status.setText(
+            tr("Плагинов в каталоге: {n}").format(n=len(entries))
+        )
         self._render_catalog()
 
     def _render_catalog(self) -> None:
@@ -292,7 +297,7 @@ class PluginManagerWindow(QDialog):
             if item.widget() is not None:
                 item.widget().deleteLater()
         query = self.search.text().strip().lower()
-        kind_label = {"official": "официальный", "community": "сообщество"}
+        kind_label = {"official": tr("официальный"), "community": tr("сообщество")}
         shown = 0
         for entry in self._catalog_entries:
             hay = f"{entry.title} {entry.description} {getattr(entry, 'author', '')}".lower()
@@ -309,17 +314,17 @@ class PluginManagerWindow(QDialog):
             )
             text.setWordWrap(True)
             installed = self.ctrl.is_installed(entry.name)
-            btn = QPushButton("Обновить" if installed else "Установить")
+            btn = QPushButton(tr("Обновить") if installed else tr("Установить"))
             btn.setFixedWidth(110)
             btn.clicked.connect(lambda _=False, e=entry, b=btn: self._install(e, b))
             row.addWidget(text, 1)
             row.addWidget(btn, 0, Qt.AlignmentFlag.AlignTop)
             self.catalog_lay.insertWidget(self.catalog_lay.count() - 1, card)
         if self._catalog_entries and not shown:
-            empty = QLabel("Ничего не найдено.")
+            empty = QLabel(tr("Ничего не найдено."))
             empty.setObjectName("heroSub")
             self.catalog_lay.insertWidget(0, empty)
 
     def _install(self, entry, btn: QPushButton) -> None:
         if self.ctrl.install_entry(entry, self):
-            btn.setText("Обновить")
+            btn.setText(tr("Обновить"))

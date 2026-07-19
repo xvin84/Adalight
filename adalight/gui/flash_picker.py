@@ -6,6 +6,8 @@ from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QRadialGradient
 from PySide6.QtWidgets import QWidget
 
+from ..i18n import tr
+
 _SCREEN_BG = QColor(28, 30, 34)
 _SCREEN_BORDER = QColor(90, 94, 102)
 _GLOW = QColor(108, 140, 255)
@@ -34,7 +36,7 @@ class FlashPositionPicker(QWidget):
         super().__init__(parent)
         self.setMinimumHeight(130)
         self.setCursor(Qt.CursorShape.CrossCursor)
-        self.setToolTip("Перетащите пятно по краю экрана — туда, где вспыхнет лента")
+        self.setToolTip(tr("Перетащите пятно по краю экрана — туда, где вспыхнет лента"))
         self._x, self._y = snap_to_perimeter(0.85, 0.9)
         self._radius = 0.3
         self._dragging = False

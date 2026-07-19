@@ -144,6 +144,7 @@ class Config:
 
     # Внешний вид
     theme: str = "dark"          # dark | light | system
+    language: str = "ru"         # код языка (ru — исходный; остальные из локалей)
     preview_screen: bool = True  # показывать картинку экрана в предпросмотре
     preview_zones: bool = True   # показывать зоны сбора цвета
     notifications: bool = True   # системные уведомления из трея

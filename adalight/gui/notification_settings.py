@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..i18n import tr
 from .flash_picker import FlashPositionPicker
 from .plugin_settings import _ColorButton
 
@@ -34,10 +35,10 @@ class NotificationSettingsWidget(QWidget):
         form.setContentsMargins(0, 0, 0, 0)
 
         hint = QLabel(
-            "Ловятся только <b>системные</b> уведомления. Если приложение рисует "
+            tr("Ловятся только <b>системные</b> уведомления. Если приложение рисует "
             "свои всплывашки — вспышки не будет: включите у него системные "
             "уведомления. Telegram: Настройки → Уведомления → «Использовать "
-            "уведомления Windows». В Discord они системные по умолчанию."
+            "уведомления Windows». В Discord они системные по умолчанию.")
         )
         hint.setWordWrap(True)
         hint.setObjectName("hintLabel")
@@ -46,7 +47,7 @@ class NotificationSettingsWidget(QWidget):
         self.picker = FlashPositionPicker()
         self.picker.changed.connect(self.changed)
         self.picker.released.connect(self.dragTest)
-        form.addRow("Позиция:", self.picker)
+        form.addRow(tr("Позиция:"), self.picker)
 
         self.sl_radius = QSlider(Qt.Orientation.Horizontal)
         self.sl_radius.setRange(5, 60)
@@ -58,17 +59,17 @@ class NotificationSettingsWidget(QWidget):
         row = QHBoxLayout()
         row.addWidget(self.sl_radius, 1)
         row.addWidget(lbl)
-        form.addRow("Радиус:", row)
+        form.addRow(tr("Радиус:"), row)
 
         self.cb_style = QComboBox()
-        self.cb_style.addItem("Бульк (волна)", "ripple")
-        self.cb_style.addItem("Пятно", "blob")
+        self.cb_style.addItem(tr("Бульк (волна)"), "ripple")
+        self.cb_style.addItem(tr("Пятно"), "blob")
         self.cb_style.setToolTip(
-            "«Бульк» — яркая капля с расходящейся по ленте волной; «Пятно» — "
-            "мягкая вспышка на месте."
+            tr("«Бульк» — яркая капля с расходящейся по ленте волной; «Пятно» — "
+            "мягкая вспышка на месте.")
         )
         self.cb_style.currentIndexChanged.connect(self.changed)
-        form.addRow("Стиль:", self.cb_style)
+        form.addRow(tr("Стиль:"), self.cb_style)
 
         self.btn_telegram = _ColorButton("#4fc3f7")
         self.btn_telegram.changed.connect(self.changed)
@@ -77,16 +78,16 @@ class NotificationSettingsWidget(QWidget):
         self.btn_discord.changed.connect(self.changed)
         form.addRow("Discord:", self.btn_discord)
 
-        self.ch_any = QCheckBox("Любые приложения — цвет от иконки")
+        self.ch_any = QCheckBox(tr("Любые приложения — цвет от иконки"))
         self.ch_any.setToolTip(
-            "Вспыхивать на уведомления всех приложений: цвет берётся из иконки "
-            "приложения (Telegram и Discord сохраняют свои цвета)."
+            tr("Вспыхивать на уведомления всех приложений: цвет берётся из иконки "
+            "приложения (Telegram и Discord сохраняют свои цвета).")
         )
         self.ch_any.toggled.connect(self.changed)
         form.addRow(self.ch_any)
 
-        btn_test = QPushButton("Тест вспышки")
-        btn_test.setToolTip("Показать вспышку на ленте (подсветка должна работать)")
+        btn_test = QPushButton(tr("Тест вспышки"))
+        btn_test.setToolTip(tr("Показать вспышку на ленте (подсветка должна работать)"))
         btn_test.clicked.connect(self.flashTest)
         form.addRow(btn_test)
 

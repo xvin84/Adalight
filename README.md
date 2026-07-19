@@ -68,6 +68,9 @@ layout, and a tray icon so the lighting keeps running with the window closed.
   (state · backend · fps), live preview with the captured screen and sampling
   zones — **clicking an LED in the preview flashes it on the real strip**;
   dark / light / system theme.
+- **Language**: Russian and English UI (System → Language); additional languages
+  install as locale plugins (a `create_locale()` file), template in
+  [examples/locales/en.py](examples/locales/en.py).
 - **First-run wizard**: port → LEDs → side check in three steps
   (also available anytime: System → "Setup wizard…").
 - **Windows installer** (`Adalight-Setup.exe`): installs per-user (no admin),
@@ -151,7 +154,7 @@ uv run main.py --list-ports
 - [x] **More music effects** (bass waves, beat flashes)
 - [ ] **Multi-monitor** — independent strip segments across screens
 - [ ] **xdg-desktop-portal / PipeWire capture** — GNOME and KDE support on Wayland
-- [ ] **English UI localization**
+- [x] **UI localization** — Russian and English; new languages ship as locale plugins
 - [ ] **macOS build** (a tester with a Mac is welcome)
 
 Got an idea? [Open an issue](https://github.com/xvin84/Adalight/issues).

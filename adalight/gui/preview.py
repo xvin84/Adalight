@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QWidget
 
 from ..config import Config
 from ..geometry import LedGeometry
+from ..i18n import tr
 
 _MARGIN = 26
 _SCREEN_BG = QColor(28, 30, 34)
@@ -61,8 +62,11 @@ class LedPreview(QWidget):
             Qt.CursorShape.PointingHandCursor if hit else Qt.CursorShape.ArrowCursor
         )
         if hit:
-            self.setToolTip(f"Диод {self._led_at(event.position()) + 1} — "
-                            "клик, чтобы вспыхнуть им на ленте")
+            self.setToolTip(
+                tr("Диод {n} — клик, чтобы вспыхнуть им на ленте").format(
+                    n=self._led_at(event.position()) + 1
+                )
+            )
 
     def set_config(self, cfg: Config) -> None:
         """Перестроить раскладку и зоны (вызывается при изменении настроек)."""
@@ -134,7 +138,7 @@ class LedPreview(QWidget):
 
         if not self._points:
             p.setPen(_SCREEN_BORDER)
-            p.drawText(area, Qt.AlignmentFlag.AlignCenter, "Нет диодов")
+            p.drawText(area, Qt.AlignmentFlag.AlignCenter, tr("Нет диодов"))
             return
 
         max_side = max(

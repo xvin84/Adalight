@@ -142,6 +142,33 @@ class MyPlugin:
 
 `kind: official` зарезервирован за плагинами из этого репозитория.
 
+## Локали (языки интерфейса)
+
+Язык — это тоже плагин. Файл кладётся в ту же папку плагинов, но вместо
+`create_plugin()` экспортирует `create_locale()`:
+
+```python
+class FrenchLocale:
+    code = "fr"                 # код языка
+    name = "Français"           # название на самом языке
+    translations = {            # {русская строка из интерфейса: перевод}
+        "Режим": "Mode",
+        "Устройство": "Appareil",
+        # …
+    }
+
+
+def create_locale():
+    return FrenchLocale()
+```
+
+Ключи — это русские строки, обёрнутые в коде в `tr()`; неизвестный ключ
+откатывается к русскому, так что переводить можно постепенно. Русский и
+английский встроены; выбор языка — «Система → Язык» (применяется после
+перезапуска). Полный список строк см. во встроенном каталоге
+[`adalight/locales/en.py`](../adalight/locales/en.py). Готовый шаблон —
+[`examples/locales/en.py`](../examples/locales/en.py).
+
 ## Пример
 
 Готовый рабочий пример — [`examples/plugins/break_reminder.py`](../examples/plugins/break_reminder.py):

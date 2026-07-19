@@ -68,11 +68,48 @@ def discover() -> list[LoadedPlugin]:
                 )
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
+                if not hasattr(module, "create_plugin"):
+                    continue  # это локаль (create_locale) — её подберёт discover_locales
                 found.append(_load_from_module(module, path=path))
             except Exception as e:  # noqa: BLE001
                 found.append(
                     LoadedPlugin(None, path.stem, path.name, "", error=str(e), path=path)
                 )
+    return found
+
+
+@dataclass
+class LoadedLocale:
+    code: str
+    name: str
+    translations: dict
+
+
+def discover_locales() -> list[LoadedLocale]:
+    """Языки-локали из <конфиг>/plugins/*.py с функцией create_locale()."""
+    found: list[LoadedLocale] = []
+    user_dir = plugins_dir()
+    if not user_dir.is_dir():
+        return found
+    for path in sorted(user_dir.glob("*.py")):
+        try:
+            spec = importlib.util.spec_from_file_location(
+                f"adalight_locale_{path.stem}", path
+            )
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            if not hasattr(module, "create_locale"):
+                continue
+            loc = module.create_locale()
+            found.append(
+                LoadedLocale(
+                    code=str(loc.code),
+                    name=str(getattr(loc, "name", loc.code)),
+                    translations=dict(getattr(loc, "translations", {})),
+                )
+            )
+        except Exception:  # noqa: BLE001 — битая локаль не должна ронять запуск
+            continue
     return found
 
 
