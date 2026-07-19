@@ -16,7 +16,7 @@ def _tr_literals() -> set[str]:
     """Строки из вызовов tr("литерал") во всех модулях GUI."""
     out: set[str] = set()
     for f in GUI.glob("*.py"):
-        for node in ast.walk(ast.parse(f.read_text())):
+        for node in ast.walk(ast.parse(f.read_text(encoding="utf-8"))):
             if isinstance(node, ast.Call):
                 fn = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
                 if fn == "tr" and node.args:
