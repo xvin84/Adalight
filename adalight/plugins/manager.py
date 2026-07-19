@@ -146,14 +146,17 @@ class PluginManager:
 
     @staticmethod
     def _unregister_capabilities(loaded: LoadedPlugin) -> None:
-        """Снять всё, что мод зарегистрировал (эффекты, источники захвата)."""
+        """Снять всё, что мод зарегистрировал: эффекты, источники захвата,
+        транспорты и подписки на события."""
         from ..capture import unregister_source as unregister_capture
         from ..effects import unregister_source as unregister_effects
+        from ..events import unsubscribe_source as unsubscribe_events
         from ..transports import unregister_source as unregister_transport
 
         unregister_effects(loaded.name)
         unregister_capture(loaded.name)
         unregister_transport(loaded.name)
+        unsubscribe_events(loaded.name)
 
     def get(self, name: str) -> LoadedPlugin | None:
         return next((p for p in self.plugins if p.name == name), None)

@@ -31,4 +31,8 @@ def _builtin_effects():
                        needs_serial=True, source="transports")
     register_transport("wled", "WLED по Wi-Fi (beta)", WledTransport,
                        needs_network=True, source="transports")
+
+    from adalight.events import bus
+    bus().clear()  # события: чистая шина на каждый тест (без утечки подписок)
     yield
+    bus().clear()

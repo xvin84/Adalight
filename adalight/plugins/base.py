@@ -126,6 +126,22 @@ class PluginAPI:
             needs_serial=needs_serial, needs_network=needs_network, source=self._source,
         )
 
+    def on(self, event: str, handler) -> None:
+        """Подписаться на событие шины. handler(payload: dict) вызывается при
+        каждом emit этого события (из любого потока). Подписка снимается при
+        выключении мода. События ядра: engine.started/stopped/frame,
+        notification.received, update.available (см. adalight/events.py)."""
+        from ..events import subscribe
+
+        subscribe(event, handler, source=self._source)
+
+    def emit(self, event: str, **data) -> None:
+        """Разослать событие по шине — другие моды могут на него реагировать.
+        Нагрузка — именованные аргументы: emit("my.event", value=1)."""
+        from ..events import emit
+
+        emit(event, **data)
+
     def notify(self, title: str, text: str) -> None:
         """Системное уведомление из трея (уважает настройку «Уведомления в трее»)."""
         self._notify(title, text)

@@ -207,6 +207,39 @@ def create_plugin():
 подсказывают GUI, какие поля показывать (порт/скорость/порядок каналов против
 адреса/порта хоста). Транспорт доступен, пока мод включён.
 
+## События (шина)
+
+Ядро и моды обмениваются событиями через общую шину — так мод реагирует на
+состояние приложения (и на другие моды), не завися от их внутренностей.
+
+- `api.on(event, handler)` — подписаться; `handler(payload)` получает словарь и
+  вызывается при каждом событии (из любого потока). Подписка снимается, когда
+  мод выключают.
+- `api.emit(event, **data)` — разослать своё событие; нагрузка — именованные
+  аргументы, у подписчика они приедут словарём.
+
+События ядра: `engine.started` / `engine.stopped` (`{mode}`), `engine.frame`
+(`{colors}` — массив `(n, 3)` uint8, эмитится только при наличии подписчиков),
+`notification.received` (`{app, color}` — от мода уведомлений),
+`update.available` (`{version, url}`). Имена событий — свободные строки, так что
+моды могут заводить свои.
+
+```python
+class LogNotifications:
+    name = "log_notifications"
+    title = "Лог уведомлений"
+
+    def register(self, api):
+        api.on("notification.received", self._on_notification)
+
+    def _on_notification(self, payload):
+        print("уведомление:", payload.get("app"), payload.get("color"))
+
+
+def create_plugin():
+    return LogNotifications()
+```
+
 ## Локали (языки интерфейса)
 
 Язык — это тоже плагин. Файл кладётся в ту же папку плагинов, но вместо

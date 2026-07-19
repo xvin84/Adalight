@@ -16,6 +16,7 @@ from typing import Literal
 
 import numpy as np
 
+from . import events
 from .capture import create_backend
 from .config import Config, parse_hex_color
 from .device import AdalightDevice
@@ -316,26 +317,30 @@ class Engine:
             self._applied_brightness = None  # форсируем пересчёт итоговой яркости
 
     def run(self, mode: Mode = "live") -> None:
-        if mode == "live":
-            self._run_live()
-        elif mode == "lamp":
-            self._run_lamp()
-        elif mode == "music":
-            self._run_music()
-        elif mode == "chase":
-            self._run_chase()
-        elif mode == "sides":
-            self._run_sides()
-        elif mode == "off":
-            self._run_off()
-        else:
+        runner = {
+            "live": self._run_live,
+            "lamp": self._run_lamp,
+            "music": self._run_music,
+            "chase": self._run_chase,
+            "sides": self._run_sides,
+            "off": self._run_off,
+        }.get(mode)
+        if runner is None:
             raise ValueError(f"Неизвестный режим: {mode!r}")
+        events.emit("engine.started", mode=mode)
+        try:
+            runner()
+        finally:
+            events.emit("engine.stopped", mode=mode)
 
     # ── внутреннее ────────────────────────────────────────────────────────
 
     def _emit(self, colors: np.ndarray) -> None:
+        out = np.asarray(colors, dtype=np.uint8)
         if self._on_colors is not None:
-            self._on_colors(np.asarray(colors, dtype=np.uint8).copy())
+            self._on_colors(out.copy())
+        if events.has_subscribers("engine.frame"):  # горячий цикл — только если нужно
+            events.emit("engine.frame", colors=out.copy())
 
     def _effective_brightness(self, raw: np.ndarray | None) -> float:
         """Итоговая яркость: расписание (или дефолт) × адаптивный коэффициент."""

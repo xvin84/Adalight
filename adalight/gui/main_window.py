@@ -77,7 +77,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import __version__, autostart, updates, whatsnew
+from .. import __version__, autostart, events, updates, whatsnew
 from ..capture import capture_sources, list_outputs
 from ..config import (
     COLOR_ORDERS,
@@ -1939,6 +1939,7 @@ class MainWindow(QMainWindow):
         self._update_version = version
         self._update_page_url = page_url
         self._update_asset_url = asset_url
+        events.emit("update.available", version=version, url=page_url)  # для модов
         self.lbl_update.setText(tr("Доступна версия {v}").format(v=version))
         self.btn_update.setText(tr("⬇ Обновить до v{v}").format(v=version))
         self.btn_update_bar.setText(tr("⬇ Доступна v{v}").format(v=version))

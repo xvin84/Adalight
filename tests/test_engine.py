@@ -343,3 +343,48 @@ def test_sleep_turns_off_strip_after_idle():
     assert any(fr.max() == 0 for fr in frames[:-1]), "лента не погасла по сну"
     # и до сна был цветной кадр
     assert any(fr.max() > 0 for fr in frames), "лента вообще не горела"
+
+
+def test_engine_emits_started_and_stopped():
+    from adalight import events
+
+    cfg = make_cfg()
+    engine = Engine(cfg)
+    engine.device.connect = lambda: _inject_fake_serial(engine, FakeSerial())
+
+    seen = []
+    events.subscribe("engine.started", lambda p: seen.append(("started", p.get("mode"))))
+    events.subscribe("engine.stopped", lambda p: seen.append(("stopped", p.get("mode"))))
+    engine.run("off")
+    assert seen == [("started", "off"), ("stopped", "off")]
+
+
+def test_engine_stopped_emitted_even_on_error():
+    from adalight import events
+
+    cfg = make_cfg()
+    engine = Engine(cfg)
+
+    def boom():
+        raise RuntimeError("порт недоступен")
+
+    engine.device.connect = boom
+    seen = []
+    events.subscribe("engine.stopped", lambda p: seen.append(p.get("mode")))
+    with pytest.raises(RuntimeError):
+        engine.run("off")
+    assert seen == ["off"]  # stopped эмитится через finally даже при исключении
+
+
+def test_engine_frame_event_carries_colors():
+    from adalight import events
+
+    cfg = make_cfg()
+    engine = Engine(cfg)
+    engine.device.connect = lambda: _inject_fake_serial(engine, FakeSerial())
+
+    frames = []
+    events.subscribe("engine.frame", lambda p: frames.append(p["colors"]))
+    engine.run("off")  # режим off эмитит один (нулевой) кадр
+    assert len(frames) == 1
+    assert frames[0].shape == (cfg.total_leds, 3)

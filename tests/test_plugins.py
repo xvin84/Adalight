@@ -52,6 +52,19 @@ def test_plugin_flash_style_blob():
     assert flashes[0][5] == "blob"
 
 
+def test_notification_flash_emits_event():
+    """Мод уведомлений эмитит notification.received — другие моды могут реагировать."""
+    from adalight import events
+
+    plugin = NotificationsPlugin()
+    plugin._api = make_api([])
+    plugin._settings = dict(DEFAULT_SETTINGS)
+    seen = []
+    events.subscribe("notification.received", lambda p: seen.append(p))
+    plugin._flash("#4fc3f7", "Telegram")
+    assert seen == [{"app": "Telegram", "color": "#4fc3f7"}]
+
+
 def test_example_plugin_template_is_valid():
     """Шаблон из examples/ обязан соответствовать контракту плагина."""
     import importlib.util
@@ -329,6 +342,39 @@ def test_example_plasma_plugin_registers_effect():
     assert fx is not None and fx.wants_speed
     out = fx.render({"lamp_speed": 0.5}, 8, 1.0, None)
     assert out.shape == (8, 3) and 0.0 <= out.min() and out.max() <= 255.0
+
+
+def test_example_notification_logger_subscribes_to_events():
+    import importlib.util
+    from pathlib import Path
+
+    from adalight import events
+
+    path = (
+        Path(__file__).resolve().parent.parent
+        / "examples" / "plugins" / "notification_logger.py"
+    )
+    spec = importlib.util.spec_from_file_location("example_notif_logger", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    plugin = module.create_plugin()
+
+    logs: list[str] = []
+    api = PluginAPI(
+        flash=lambda *a: None, notify=lambda *a: None, log=logs.append
+    ).bound("notification_logger")
+    plugin.register(api)
+
+    events.emit("engine.started", mode="lamp")
+    events.emit("notification.received", app="Telegram", color="#4fc3f7")
+    assert any("режим lamp" in m for m in logs)
+    assert any("Telegram" in m for m in logs)
+
+    # выключение мода снимает подписки
+    events.unsubscribe_source("notification_logger")
+    logs.clear()
+    events.emit("engine.started", mode="live")
+    assert logs == []
 
 
 def test_builtin_english_uses_locale_contract():

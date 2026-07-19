@@ -4,6 +4,17 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/);
 versions follow [SemVer](https://semver.org/). Full diffs are in the
 [GitHub releases](https://github.com/xvin84/Adalight/releases).
 
+## [0.21.0] — 2026-07-19
+
+- "Everything is a mod", stage 5 (migration complete): an event bus. Mods and
+  plugins can react to the app's state and to each other without depending on
+  their internals.
+- A plugin can subscribe to events (`api.on`) and broadcast its own (`api.emit`):
+  lighting start/stop, frame, notification, available update.
+- An event-driven plugin example — "Notification logger" in `examples/plugins`.
+- CI fix: Qt system libraries are installed on the runner (tests that touch the
+  UI run on CI again).
+
 ## [0.20.0] — 2026-07-19
 
 - "Everything is a mod", stage 4: the ways colors reach the strip (serial over

@@ -113,7 +113,10 @@ class NotificationsPlugin:
             self._thread.join(timeout=3)
             self._thread = None
 
-    def _flash(self, color: str) -> None:
+    def _flash(self, color: str, app: str = "") -> None:
+        # эмитим событие на шину — другие моды могут реагировать на уведомления,
+        # не завися от нас; вспышка на ленте — это уже действие
+        self._api.emit("notification.received", app=app, color=color)
         s = self._settings
         self._api.trigger_flash(
             color,
@@ -174,7 +177,7 @@ class NotificationsPlugin:
                     if color is None and self._settings.get("any_app"):
                         color = await self._windows_app_accent(n.app_info, app_name)
                     if color:
-                        self._flash(color)
+                        self._flash(color, app_name)
                 first_pass = False
                 await asyncio.sleep(2.0)
 
@@ -235,7 +238,7 @@ class NotificationsPlugin:
                 if color is None and self._settings.get("any_app"):
                     color = self._linux_app_accent(app_name, app_icon)
                 if color:
-                    self._flash(color)
+                    self._flash(color, app_name)
 
     def _linux_app_accent(self, app_name: str, app_icon: str) -> str:
         """Цвет из иконки: работает, если в Notify передан путь к файлу картинки."""
