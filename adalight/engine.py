@@ -66,6 +66,8 @@ def localize_slice(side: str, slc: Slice, width: int, height: int, bw: int, bh: 
 class Engine:
     PREVIEW_INTERVAL_S = 0.3
     PREVIEW_HEIGHT = 180
+    KEEPALIVE_S = 3.0        # переслать кадр не реже — плата не заснёт (её порог ~10 с)
+    SLEEP_CHANGE_THRESHOLD = 4  # изменение цвета диода меньше — считаем «нет движения»
 
     def __init__(
         self,
@@ -100,6 +102,8 @@ class Engine:
         self._adaptive_min = cfg.adaptive_min
         self._adaptive_max = cfg.adaptive_max
         self._adaptive_speed = cfg.adaptive_speed
+        self._sleep_enabled = cfg.sleep_enabled
+        self._sleep_timeout_s = cfg.sleep_timeout_s
 
         self._night = cfg.night_mode
         self._color_temp = cfg.color_temp
@@ -218,6 +222,11 @@ class Engine:
     def _effective_smooth(self) -> float:
         return max(self._smooth, NIGHT_MIN_SMOOTH) if self._night else self._smooth
 
+    def _sleeping(self, now: float, last_activity: float) -> bool:
+        """Пора ли гасить ленту: сон включён и экран не менялся дольше таймаута."""
+        with self._lock:
+            return self._sleep_enabled and (now - last_activity) > self._sleep_timeout_s
+
     def stop(self) -> None:
         self._stop.set()
 
@@ -234,6 +243,8 @@ class Engine:
         adaptive_min: float | None = None,
         adaptive_max: float | None = None,
         adaptive_speed: float | None = None,
+        sleep_enabled: bool | None = None,
+        sleep_timeout_s: int | None = None,
         color_temp: int | None = None,
         black_threshold: float | None = None,
         white_balance: tuple[float, float, float] | None = None,
@@ -268,6 +279,10 @@ class Engine:
                 self._adaptive_max = adaptive_max
             if adaptive_speed is not None:
                 self._adaptive_speed = adaptive_speed
+            if sleep_enabled is not None:
+                self._sleep_enabled = sleep_enabled
+            if sleep_timeout_s is not None:
+                self._sleep_timeout_s = sleep_timeout_s
             if color_temp is not None:
                 self._color_temp = color_temp
             if night_mode is not None:
@@ -376,6 +391,12 @@ class Engine:
             frame_time = 1.0 / self.cfg.target_fps
             fps_t0, fps_n = time.monotonic(), 0
             preview_t = 0.0
+            # режим сна / keep-alive (см. _push_live_frame)
+            last_final: np.ndarray | None = None
+            last_activity = time.monotonic()  # когда экран последний раз менялся
+            last_send = 0.0
+            asleep = False
+            off = np.zeros((n, 3), dtype=np.uint8)
 
             while not self._stop.is_set():
                 t0 = time.monotonic()
@@ -415,8 +436,37 @@ class Engine:
                     smoothed *= s
                     smoothed += raw * (1.0 - s)
                     final = self._apply_overlays(self.device.process(smoothed))
-                    self.device.send_raw(final)
-                    self._emit(final)
+                    diff = 255 if last_final is None else int(
+                        np.abs(final.astype(np.int16) - last_final.astype(np.int16)).max()
+                    )
+                    if diff > self.SLEEP_CHANGE_THRESHOLD:
+                        last_activity = t0  # экран изменился — это активность
+                    last_final = final
+                    if self._sleeping(t0, last_activity):
+                        if not asleep:  # только что заснули — гасим один раз
+                            self.device.send_raw(off)
+                            self._emit(off)
+                            asleep = True
+                    else:
+                        asleep = False
+                        self.device.send_raw(final)
+                        self._emit(final)
+                        last_send = t0
+                elif last_final is not None:
+                    # нового кадра нет (статичный экран на DXGI-захвате)
+                    if self._sleeping(t0, last_activity):
+                        if not asleep:
+                            self.device.send_raw(off)
+                            self._emit(off)
+                            asleep = True
+                    elif t0 - last_send > self.KEEPALIVE_S:
+                        # keep-alive: переслать кадр, иначе плата заснёт через ~10 с
+                        self._apply_brightness(raw)  # расписание/адаптив могли поменяться
+                        final = self._apply_overlays(self.device.process(smoothed))
+                        self.device.send_raw(final)
+                        self._emit(final)
+                        last_send = t0
+                        last_final = final
 
                 fps_n += 1
                 now = time.monotonic()

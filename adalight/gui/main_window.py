@@ -470,7 +470,9 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(self._make_tab(self._tab_mode_content()))
         self.pages.addWidget(self._make_tab(self._group_connection(), self._group_leds()))
         self.pages.addWidget(self._make_tab(self._group_image()))
-        self.pages.addWidget(self._make_tab(self._group_adaptive(), self._group_schedule()))
+        self.pages.addWidget(self._make_tab(
+            self._group_adaptive(), self._group_sleep(), self._group_schedule()
+        ))
         self.pages.addWidget(self._make_tab(*self._plugins_tab_content()))
         self.pages.addWidget(
             self._make_tab(
@@ -1124,6 +1126,44 @@ class MainWindow(QMainWindow):
         self.sl_aspeed.setToolTip(tr("Скорость реакции: больше — быстрее догоняет сцену"))
         form.addRow(tr("Скорость:"), row)
         return g
+
+    def _group_sleep(self) -> QGroupBox:
+        g = QGroupBox(tr("Режим сна"))
+        self._sleep_form = form = QFormLayout(g)
+
+        self.ch_sleep = QCheckBox(tr("Гасить ленту при простое"))
+        self.ch_sleep.setToolTip(
+            tr("Если экран не меняется дольше выбранного времени — лента гаснет.\n"
+            "Выключено — лента не даёт плате заснуть на статичной картинке.")
+        )
+        self.ch_sleep.toggled.connect(self._on_sleep_toggled)
+        form.addRow(self.ch_sleep)
+
+        self.sl_sleep = QSlider(Qt.Orientation.Horizontal)
+        self.sl_sleep.setRange(1, 60)  # минуты
+        lbl = QLabel()
+        lbl.setFixedWidth(48)
+        self.sl_sleep.valueChanged.connect(lambda v: lbl.setText(tr("{n} мин").format(n=v)))
+        self.sl_sleep.valueChanged.connect(self._on_soft_changed)
+        row = QHBoxLayout()
+        row.addWidget(self.sl_sleep, 1)
+        row.addWidget(lbl)
+        self._sleep_row_w = self._wrap_row(row)
+        form.addRow(tr("Гаснуть через:"), self._sleep_row_w)
+
+        self._sync_sleep_rows()
+        return g
+
+    def _on_sleep_toggled(self, *args) -> None:
+        self._sync_sleep_rows()
+        self._on_soft_changed()
+
+    def _sync_sleep_rows(self) -> None:
+        show = self.ch_sleep.isChecked()
+        label = self._sleep_form.labelForField(self._sleep_row_w)
+        if label is not None:
+            label.setVisible(show)
+        self._sleep_row_w.setVisible(show)
 
     def _group_schedule(self) -> QGroupBox:
         g = QGroupBox(tr("Расписание яркости"))
@@ -2086,6 +2126,9 @@ class MainWindow(QMainWindow):
         self.sl_amin.setValue(round(cfg.adaptive_min * 100))
         self.sl_amax.setValue(round(cfg.adaptive_max * 100))
         self.sl_aspeed.setValue(round(cfg.adaptive_speed * 100))
+        self.ch_sleep.setChecked(cfg.sleep_enabled)
+        self.sl_sleep.setValue(max(1, round(cfg.sleep_timeout_s / 60)))
+        self._sync_sleep_rows()
 
         self.ch_schedule.setChecked(cfg.schedule_enabled)
         self.tbl_schedule.setRowCount(0)
@@ -2143,6 +2186,8 @@ class MainWindow(QMainWindow):
             adaptive_min=self.sl_amin.value() / 100,
             adaptive_max=self.sl_amax.value() / 100,
             adaptive_speed=self.sl_aspeed.value() / 100,
+            sleep_enabled=self.ch_sleep.isChecked(),
+            sleep_timeout_s=self.sl_sleep.value() * 60,
             schedule_enabled=self.ch_schedule.isChecked(),
             schedule=self._schedule_from_table(),
             theme=self.cb_theme.currentData(),
@@ -2295,6 +2340,8 @@ class MainWindow(QMainWindow):
             adaptive_min=cfg.adaptive_min,
             adaptive_max=cfg.adaptive_max,
             adaptive_speed=cfg.adaptive_speed,
+            sleep_enabled=cfg.sleep_enabled,
+            sleep_timeout_s=cfg.sleep_timeout_s,
             lamp_effect=cfg.lamp_effect,
             lamp_color=cfg.lamp_color,
             lamp_gradient=cfg.lamp_gradient,

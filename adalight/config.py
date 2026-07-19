@@ -105,6 +105,11 @@ class Config:
     adaptive_max: float = 1.0
     adaptive_speed: float = 0.05  # доля пути до цели за кадр (0..1]
 
+    # Режим сна: гасить ленту при простое. Выключен — keep-alive не даёт плате
+    # заснуть на статичной картинке (плата гасит ленту через ~10 с без кадра).
+    sleep_enabled: bool = False
+    sleep_timeout_s: int = 300     # без изменений на экране столько секунд → гашение
+
     # Конвейер цвета
     color_temp: int = 6500        # цветовая температура, K (6500 = нейтрально)
     black_threshold: float = 0.0  # отсечка шума в тенях, доля 0..0.5
@@ -189,6 +194,8 @@ class Config:
             raise ValueError("Адаптивная яркость: нужно 0 <= мин <= макс <= 2")
         if not 0.0 < self.adaptive_speed <= 1.0:
             raise ValueError("Адаптивная яркость: скорость должна быть в диапазоне (0, 1]")
+        if self.sleep_timeout_s <= 0:
+            raise ValueError("Время до сна должно быть больше нуля")
         if not 1000 <= self.color_temp <= 10000:
             raise ValueError("Цветовая температура должна быть в диапазоне 1000..10000 K")
         if not 0.0 <= self.black_threshold <= 0.5:

@@ -4,6 +4,14 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/);
 versions follow [SemVer](https://semver.org/). Full diffs are in the
 [GitHub releases](https://github.com/xvin84/Adalight/releases).
 
+## [0.17.0] — 2026-07-19
+
+- Sleep mode: on a static picture the strip no longer goes dark — the app keeps
+  the board awake (keep-alive). Previously the board turned the strip off itself
+  after ~10 seconds without changes.
+- With sleep mode enabled the strip instead turns off when idle — the time is
+  set by a slider (Brightness → Sleep mode).
+
 ## [0.16.0] — 2026-07-19
 
 - "Everything is a mod", stage 1: the "Lamp" mode effects became a built-in

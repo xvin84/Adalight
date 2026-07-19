@@ -285,3 +285,52 @@ def test_band_rects_and_localize_roundtrip():
         y1, y2, x1, x2 = slc
         ly1, ly2, lx1, lx2 = localize_slice(sides[i], slc, w, h, bw, bh)
         assert np.array_equal(frame[y1:y2, x1:x2], bands[sides[i]][ly1:ly2, lx1:lx2])
+
+
+class _OneFrameThenStatic(FakeBackend):
+    """Отдаёт кадр один раз, потом None — как DXGI на статичном экране."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self._served = False
+
+    def get_frame(self):
+        if self._served:
+            return None
+        self._served = True
+        return self._frame
+
+
+def _run_live(engine, seconds):
+    fake_serial = FakeSerial()
+    engine.device.connect = lambda: setattr(engine.device, "ser", fake_serial)
+    t = threading.Thread(target=engine.run, args=("live",))
+    t.start()
+    time.sleep(seconds)
+    engine.stop()
+    t.join(timeout=5.0)
+    assert not t.is_alive()
+    return fake_serial
+
+
+def test_keepalive_resends_on_static_screen():
+    """Сон выключен: на статичном экране (DXGI отдаёт None) keep-alive шлёт кадры."""
+    cfg = make_cfg(target_fps=120, sleep_enabled=False)
+    engine = Engine(cfg, backend_factory=lambda _c: _OneFrameThenStatic())
+    engine.KEEPALIVE_S = 0.05  # часто — чтобы тест был быстрым
+    serial = _run_live(engine, 0.4)
+    # без keep-alive был бы 1 кадр; с ним (0.05 с) за 0.4 с — заметно больше
+    assert len(serial.frames) >= 4, len(serial.frames)
+
+
+def test_sleep_turns_off_strip_after_idle():
+    """Сон включён: без изменений на экране лента гаснет через таймаут."""
+    cfg = make_cfg(target_fps=120, sleep_enabled=True)
+    engine = Engine(cfg, backend_factory=lambda _c: FakeBackend(color=(100, 150, 200)))
+    engine._sleep_timeout_s = 0.15  # короткий таймаут для теста
+    serial = _run_live(engine, 0.5)
+    frames = [np.frombuffer(f[6:], np.uint8).reshape(-1, 3) for f in serial.frames]
+    # среди отправленных (кроме последнего — гашение при close) есть чёрный кадр (сон)
+    assert any(fr.max() == 0 for fr in frames[:-1]), "лента не погасла по сну"
+    # и до сна был цветной кадр
+    assert any(fr.max() > 0 for fr in frames), "лента вообще не горела"
