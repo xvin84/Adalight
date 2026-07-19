@@ -61,7 +61,6 @@ def test_validate_accepts_defaults():
         {"adaptive_speed": 0.0},
         {"mode": "disco"},
         {"lamp_color": "красный"},
-        {"music_effect": "waves"},
         {"music_gain": 0.0},
         {"color_temp": 500},
         {"black_threshold": 0.9},

@@ -83,6 +83,19 @@ class PluginAPI:
             wants_gradient=wants_gradient, wants_fire=wants_fire, source=self._source,
         )
 
+    def register_music_effect(
+        self, effect_id: str, label: str, factory, *, wants_color: bool = False
+    ) -> None:
+        """Добавить свой эффект цветомузыки. factory(n_leds) -> объект с методом
+        render(samples, samplerate, cfg) -> RGB (n, 3) в 0..255: samples — блок
+        аудио, cfg — настройки (music_color/music_gain). Эффект держит своё
+        состояние (АРУ и т.п.) между вызовами."""
+        from ..effects import register_music_effect
+
+        register_music_effect(
+            effect_id, label, factory, wants_color=wants_color, source=self._source
+        )
+
     def notify(self, title: str, text: str) -> None:
         """Системное уведомление из трея (уважает настройку «Уведомления в трее»)."""
         self._notify(title, text)

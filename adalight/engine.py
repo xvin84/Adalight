@@ -19,7 +19,7 @@ import numpy as np
 from .capture import create_backend
 from .config import Config, parse_hex_color
 from .device import AdalightDevice
-from .effects import MusicRenderer, render_lamp
+from .effects import render_lamp
 from .geometry import LedGeometry, Slice
 from .schedule import ScheduleRule, brightness_at, parse_rules
 
@@ -121,7 +121,6 @@ class Engine:
             "music_color": cfg.music_color,
             "music_gain": cfg.music_gain,
         }
-        self._music_dirty = False
 
         self._lum_smoothed = 0.5  # сглаженная яркость сцены 0..1
         self._applied_brightness: float | None = None
@@ -305,9 +304,8 @@ class Engine:
                 ("music_color", music_color),
                 ("music_gain", music_gain),
             ):
-                if value is not None and self._music[key] != value:
+                if value is not None:
                     self._music[key] = value
-                    self._music_dirty = True
             self.device.set_tuning(
                 gamma=gamma,
                 saturation=saturation,
@@ -505,28 +503,37 @@ class Engine:
             self.device.close()
 
     def _run_music(self) -> None:
-        """Цветомузыка: системный loopback-звук -> спектр/пульс на ленте."""
+        """Цветомузыка: системный loopback-звук -> эффект из реестра на ленте."""
         from .audio import LoopbackAudio  # импорт при использовании: тянет soundcard
+        from .effects import make_music_renderer
 
         audio = LoopbackAudio()
         try:
             n = self.cfg.total_leds
-            renderer = self._make_music_renderer(n)
+            with self._lock:
+                current_effect = self._music["music_effect"]
+            renderer = make_music_renderer(current_effect, n)  # None — эффект-мод выкл.
             if self._on_backend is not None:
                 self._on_backend(f"audio {audio.samplerate} Гц")
             self.device.connect()
+            off = np.zeros((n, 3), dtype=np.uint8)
             fps_t0, fps_n = time.monotonic(), 0
             while not self._stop.is_set():
                 block = audio.read()  # блокирует на ~blocksize/rate (~21 мс)
                 with self._lock:
-                    if self._music_dirty:
-                        renderer = self._make_music_renderer(n)
-                        self._music_dirty = False
-                raw = renderer.render(block, audio.samplerate)
-                self._apply_brightness(None)
-                final = self._apply_overlays(self.device.process(raw))
-                self.device.send_raw(final)
-                self._emit(final)
+                    music = dict(self._music)
+                if music["music_effect"] != current_effect:  # эффект сменился
+                    current_effect = music["music_effect"]
+                    renderer = make_music_renderer(current_effect, n)
+                if renderer is None:
+                    self.device.send_raw(off)
+                    self._emit(off)
+                else:
+                    raw = renderer.render(block, audio.samplerate, music)
+                    self._apply_brightness(None)
+                    final = self._apply_overlays(self.device.process(raw))
+                    self.device.send_raw(final)
+                    self._emit(final)
 
                 fps_n += 1
                 now = time.monotonic()
@@ -537,14 +544,6 @@ class Engine:
         finally:
             audio.close()
             self.device.close()
-
-    def _make_music_renderer(self, n: int) -> MusicRenderer:
-        return MusicRenderer(
-            effect=self._music["music_effect"],
-            color=self._music["music_color"],
-            gain=self._music["music_gain"],
-            n_leds=n,
-        )
 
     def _run_chase(self) -> None:
         self.device.connect()

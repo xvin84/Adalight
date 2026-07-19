@@ -202,10 +202,9 @@ class Config:
             raise ValueError("Порог теней должен быть в диапазоне 0..0.5")
         if self.mode not in MODES:
             raise ValueError(f"Неверный режим: {self.mode!r}")
-        # lamp_effect не валидируем: эффекты даёт мод (может быть выключен),
-        # неизвестный эффект движок мягко откатывает на сплошной цвет
-        if self.music_effect not in MUSIC_EFFECTS:
-            raise ValueError(f"Неверный эффект цветомузыки: {self.music_effect!r}")
+        # lamp_effect/music_effect не валидируем: эффекты даёт мод (может быть
+        # выключен), неизвестный движок мягко откатывает (лампа → сплошной цвет,
+        # цветомузыка → гашение)
         for name in ("lamp_color", "music_color"):
             parse_hex_color(getattr(self, name))  # бросает ValueError
         if not 0.0 <= self.lamp_speed <= 1.0:

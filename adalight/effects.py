@@ -82,9 +82,11 @@ def register_lamp_effect(
 
 
 def unregister_source(source: str) -> None:
-    """Снять все эффекты, зарегистрированные модом source (при его выключении)."""
+    """Снять всё, что зарегистрировал мод source (эффекты лампы и цветомузыки)."""
     for effect_id in [i for i, s in _LAMP_EFFECTS.items() if s.source == source]:
         del _LAMP_EFFECTS[effect_id]
+    for effect_id in [i for i, s in _MUSIC_EFFECTS.items() if s.source == source]:
+        del _MUSIC_EFFECTS[effect_id]
 
 
 def lamp_effects() -> list[LampEffectSpec]:
@@ -108,98 +110,53 @@ def render_lamp(
     return spec.render(cfg_like, n, t, points)
 
 
-# ── цветомузыка ──────────────────────────────────────────────────────────
+# ── цветомузыка: реестр эффектов ───────────────────────────────────────────
+#
+# Музыкальный эффект держит состояние (АРУ, история баса), поэтому регистрирует
+# фабрику: factory(n_leds) -> объект с render(samples, samplerate, cfg) -> RGB.
+# cfg — словарь настроек (music_color/music_gain), читается на лету.
+
+MusicFactory = Callable[[int], object]
 
 
-class MusicRenderer:
-    """Превращает аудиоблоки в цвета ленты. Держит АРУ (автоусиление),
-    чтобы тихая и громкая музыка выглядели одинаково живо."""
+@dataclass
+class MusicEffectSpec:
+    id: str
+    label: str
+    factory: MusicFactory
+    wants_color: bool = False
+    source: str = ""
 
-    WAVE_HISTORY = 60  # кадров истории баса для бегущей волны
 
-    def __init__(self, effect: str, color: str, gain: float, n_leds: int):
-        self.effect = effect
-        self.color = np.array(parse_hex_color(color), dtype=np.float64)
-        self.gain = float(gain)
-        self.n = n_leds
-        self._peak = 1e-6
-        self._smoothed = np.zeros(n_leds)
-        self._wave_history = [0.0] * self.WAVE_HISTORY
-        self._beat_avg = 1e-6
-        self._beat_flash = 0.0
+_MUSIC_EFFECTS: dict[str, MusicEffectSpec] = {}
 
-    def _agc(self, values: np.ndarray) -> np.ndarray:
-        """Нормировка на медленно затухающий пик; gain подкручивает чувствительность.
 
-        Степень 0.45 — перцептивное сжатие: тихие полосы заметно подтягиваются
-        (0.1 -> 0.35), иначе всё, что тише пика, выглядит почти чёрным.
-        """
-        self._peak = max(self._peak * 0.995, float(values.max()), 1e-6)
-        norm = np.clip(values / self._peak, 0.0, 1.0)
-        return np.clip(np.power(norm, 0.45) * self.gain, 0.0, 1.0)
+def register_music_effect(
+    effect_id: str,
+    label: str,
+    factory: MusicFactory,
+    *,
+    wants_color: bool = False,
+    source: str = "",
+) -> None:
+    """Добавить эффект цветомузыки в реестр (повторный id — перезапись)."""
+    _MUSIC_EFFECTS[effect_id] = MusicEffectSpec(
+        effect_id, label, factory, wants_color, source
+    )
 
-    def render(self, samples: np.ndarray, samplerate: int) -> np.ndarray:
-        if self.effect == "pulse":
-            return self._render_pulse(samples, samplerate)
-        if self.effect == "wave":
-            return self._render_wave(samples, samplerate)
-        if self.effect == "beat":
-            return self._render_beat(samples, samplerate)
-        return self._render_spectrum(samples, samplerate)
 
-    def _bass_level(self, samples: np.ndarray, samplerate: int) -> float:
-        """Энергия баса (40..150 Гц), нормированная АРУ в 0..1."""
-        bass = self._bands(samples, samplerate, 12)[:3].mean()
-        return float(self._agc(np.array([bass]))[0])
+def music_effects() -> list[MusicEffectSpec]:
+    return list(_MUSIC_EFFECTS.values())
 
-    def _bands(self, samples: np.ndarray, samplerate: int, count: int) -> np.ndarray:
-        """Логарифмические частотные полосы 40 Гц..8 кГц."""
-        spectrum = np.abs(np.fft.rfft(samples * np.hanning(len(samples))))
-        freqs = np.fft.rfftfreq(len(samples), 1.0 / samplerate)
-        edges = np.geomspace(40.0, 8000.0, count + 1)
-        bands = np.zeros(count)
-        for i in range(count):
-            mask = (freqs >= edges[i]) & (freqs < edges[i + 1])
-            if mask.any():
-                bands[i] = spectrum[mask].mean()
-        return bands
 
-    def _render_spectrum(self, samples: np.ndarray, samplerate: int) -> np.ndarray:
-        """Спектр по периметру: низкие частоты в начале ленты, высокие — в конце."""
-        levels = self._agc(self._bands(samples, samplerate, self.n))
-        # инерция вниз, мгновенная атака вверх — так «бьётся» приятнее
-        self._smoothed = np.maximum(levels, self._smoothed * 0.82)
-        hues = 0.66 - 0.66 * np.arange(self.n) / max(self.n, 1)  # синий -> красный
-        return hsv_strip(hues, self._smoothed)
+def music_effect(effect_id: str) -> MusicEffectSpec | None:
+    return _MUSIC_EFFECTS.get(effect_id)
 
-    def _render_pulse(self, samples: np.ndarray, samplerate: int) -> np.ndarray:
-        """Вся лента пульсирует одним цветом от энергии баса (40..150 Гц)."""
-        level = self._bass_level(samples, samplerate)
-        self._smoothed = np.maximum(level, self._smoothed * 0.85)
-        return np.tile(self.color * float(self._smoothed[0]), (self.n, 1))
 
-    def _render_wave(self, samples: np.ndarray, samplerate: int) -> np.ndarray:
-        """Волны от баса: рождаются в середине ленты и разбегаются к краям.
+def make_music_renderer(effect_id: str, n_leds: int) -> object | None:
+    """Свежий рендерер для эффекта из реестра (None — эффект не зарегистрирован)."""
+    spec = _MUSIC_EFFECTS.get(effect_id)
+    return spec.factory(n_leds) if spec is not None else None
 
-        История уровней баса — лента времени фиксированной длины: центр диода
-        читает «сейчас», края — прошлое, поэтому всплеск баса виден как волна,
-        уходящая от центра к краям.
-        """
-        self._wave_history.insert(0, self._bass_level(samples, samplerate))
-        del self._wave_history[self.WAVE_HISTORY :]
-        history = np.array(self._wave_history)
-        center = (self.n - 1) / 2.0
-        dist = np.abs(np.arange(self.n) - center) / max(center, 1.0)  # 0..1
-        idx = (dist * (self.WAVE_HISTORY - 1)).astype(int)
-        return self.color * history[idx][:, None]
 
-    def _render_beat(self, samples: np.ndarray, samplerate: int) -> np.ndarray:
-        """Вспышки на битах: удар баса заметно выше среднего — вся лента вспыхивает."""
-        bass = float(self._bands(samples, samplerate, 12)[:3].mean())
-        self._beat_avg = self._beat_avg * 0.95 + bass * 0.05
-        if bass > self._beat_avg * 1.6 and bass > 1e-6:
-            self._beat_flash = 1.0
-        else:
-            self._beat_flash *= 0.82  # быстрое затухание между ударами
-        level = min(self._beat_flash * self.gain, 1.0)
-        return np.tile(self.color * level, (self.n, 1))
+# Реализации эффектов цветомузыки переехали в мод adalight.plugins.builtin.effects_music

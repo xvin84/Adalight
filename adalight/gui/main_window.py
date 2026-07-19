@@ -84,7 +84,6 @@ from ..config import (
     COLOR_ORDERS,
     DIRECTIONS,
     MODES,
-    MUSIC_EFFECTS,
     PRESET_PROFILES,
     START_CORNERS,
     Config,
@@ -97,7 +96,8 @@ from ..config import (
 )
 from ..device import list_serial_ports
 from ..effects import lamp_effect as _lamp_spec
-from ..effects import lamp_effects
+from ..effects import lamp_effects, music_effects
+from ..effects import music_effect as _music_spec
 from ..engine import Engine, Mode
 from ..i18n import available_languages, register_language, set_language, tr
 from ..plugins import PluginAPI, PluginManager
@@ -117,13 +117,7 @@ _CORNER_LABELS = {
 _DIRECTION_LABELS = {"cw": "По часовой", "ccw": "Против часовой"}
 _MODE_LABELS = {"capture": "Захват экрана", "lamp": "Лампа", "music": "Цветомузыка"}
 _MODE_TO_ENGINE: dict[str, Mode] = {"capture": "live", "lamp": "lamp", "music": "music"}
-# метки эффектов лампы теперь в реестре effects.lamp_effects() («всё есть мод»)
-_MUSIC_EFFECT_LABELS = {
-    "spectrum": "Спектр по периметру",
-    "pulse": "Пульс от баса",
-    "wave": "Волны от баса",
-    "beat": "Вспышки на битах",
-}
+# метки эффектов лампы/цветомузыки теперь в реестрах effects (моды effects_*)
 _MAIN_MODES: tuple[Mode, ...] = ("live", "lamp", "music")
 _PRESET_ICONS = {"Кино": "film", "Игра": "gamepad", "Работа": "briefcase"}
 _THEME_LABELS = {"dark": "Тёмная", "light": "Светлая", "system": "Системная"}
@@ -820,8 +814,7 @@ class MainWindow(QMainWindow):
         self._music_form = form
 
         self.cb_music_effect = QComboBox()
-        for value in MUSIC_EFFECTS:
-            self.cb_music_effect.addItem(tr(_MUSIC_EFFECT_LABELS[value]), value)
+        self._fill_music_effects()
         self.cb_music_effect.setToolTip(
             tr("Спектр: басы в начале ленты, высокие — в конце.\n"
             "Пульс: вся лента дышит одним цветом от энергии баса.")
@@ -878,12 +871,31 @@ class MainWindow(QMainWindow):
                 label.setVisible(visible)
             widget.setVisible(visible)
 
+    def _fill_music_effects(self) -> None:
+        """Заполнить список эффектов цветомузыки из реестра."""
+        cur = self.cb_music_effect.currentData()
+        self.cb_music_effect.blockSignals(True)
+        self.cb_music_effect.clear()
+        specs = music_effects()
+        if not specs:
+            self.cb_music_effect.addItem(tr("Нет эффектов (включите мод «Цветомузыка»)"), None)
+            self.cb_music_effect.setEnabled(False)
+        else:
+            self.cb_music_effect.setEnabled(True)
+            for spec in specs:
+                self.cb_music_effect.addItem(tr(spec.label), spec.id)
+            if cur is not None:
+                idx = self.cb_music_effect.findData(cur)
+                self.cb_music_effect.setCurrentIndex(max(idx, 0))
+        self.cb_music_effect.blockSignals(False)
+
     def _on_music_effect_changed(self, *args) -> None:
         self._sync_music_rows()
         self._on_soft_changed()
 
     def _sync_music_rows(self) -> None:
-        show_color = self.cb_music_effect.currentData() in ("pulse", "wave", "beat")
+        spec = _music_spec(self.cb_music_effect.currentData())
+        show_color = bool(spec and spec.wants_color)
         label = self._music_form.labelForField(self.btn_music_color)
         if label is not None:
             label.setVisible(show_color)
@@ -1558,6 +1570,7 @@ class MainWindow(QMainWindow):
         self.plugin_manager.apply(self._plugins_cfg)
         self._refresh_plugins_summary()
         self._fill_lamp_effects()  # мод мог добавить/убрать эффекты
+        self._fill_music_effects()
 
     def flash_test(self, entry: dict) -> None:
         if self.thread is None or self._mode not in _MAIN_MODES:
@@ -2116,7 +2129,10 @@ class MainWindow(QMainWindow):
         self.sl_fire_height.setValue(round(cfg.fire_height * 100))
         self.sl_fire_intensity.setValue(round(cfg.fire_intensity * 100))
         self.sp_fire_sparks.setValue(cfg.fire_sparks)
-        self.cb_music_effect.setCurrentIndex(MUSIC_EFFECTS.index(cfg.music_effect))
+        self._fill_music_effects()  # эффекты цветомузыки из реестра
+        self.cb_music_effect.setCurrentIndex(
+            max(self.cb_music_effect.findData(cfg.music_effect), 0)
+        )
         self._set_button_color(self.btn_music_color, cfg.music_color)
         self.sl_music_gain.setValue(round(cfg.music_gain * 100))
         self._sync_lamp_rows()

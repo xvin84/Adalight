@@ -261,6 +261,31 @@ def test_effects_lamp_mod_activate_deactivate():
     assert effects.lamp_effect("starry") is not None
 
 
+def test_effects_music_mod_activate_deactivate():
+    """Базовый мод «Цветомузыка»: включён по умолчанию, выключение убирает эффекты."""
+    from adalight import effects
+    from adalight.plugins.builtin import effects_music
+    from adalight.plugins.manager import LoadedPlugin
+
+    effects.unregister_source("effects_music")
+    assert effects.music_effect("beat") is None
+    assert effects.make_music_renderer("spectrum", 8) is None
+
+    manager = _empty_manager()
+    loaded = LoadedPlugin(
+        effects_music.create_plugin(), "effects_music", "Цветомузыка", "", base=True
+    )
+    manager.plugins = [loaded]
+
+    manager.apply({})  # base=True → активируется
+    assert loaded.running and effects.music_effect("spectrum") is not None
+    renderer = effects.make_music_renderer("spectrum", 8)
+    assert renderer is not None and hasattr(renderer, "render")
+
+    manager.apply({"effects_music": {"enabled": False}})  # выключаем
+    assert not loaded.running and effects.music_effect("spectrum") is None
+
+
 def test_manager_calls_plugin_register_hook():
     """Плагин с register(api) добавляет эффект лампы при загрузке."""
     from adalight import effects

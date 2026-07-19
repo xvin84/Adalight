@@ -180,6 +180,12 @@ def create_plugin():
 исчезнет из списка. `start`/`stop` для чисто-эффектного мода не нужны. Готовый
 пример — [`examples/plugins/plasma_effect.py`](../examples/plugins/plasma_effect.py).
 
+Аналогично можно добавить эффект **цветомузыки** — он держит своё состояние
+(АРУ, история баса), поэтому регистрируется фабрикой:
+`api.register_music_effect(id, label, factory, wants_color=…)`, где
+`factory(n_leds)` создаёт объект с методом `render(samples, samplerate, cfg)`
+(cfg — `music_color`/`music_gain`, читаются на лету).
+
 ## Локали (языки интерфейса)
 
 Язык — это тоже плагин. Файл кладётся в ту же папку плагинов, но вместо

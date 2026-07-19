@@ -4,6 +4,12 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/);
 versions follow [SemVer](https://semver.org/). Full diffs are in the
 [GitHub releases](https://github.com/xvin84/Adalight/releases).
 
+## [0.18.0] — 2026-07-19
+
+- "Everything is a mod", stage 2: the "Music" mode effects became a built-in
+  "Music" mod — visible and manageable in the plugin manager.
+- Plugins can add their own music effects the same way the built-in ones do.
+
 ## [0.17.0] — 2026-07-19
 
 - Sleep mode: on a static picture the strip no longer goes dark — the app keeps

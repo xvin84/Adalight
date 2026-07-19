@@ -315,6 +315,8 @@ TRANSLATIONS: dict[str, str] = {
     "Выключить базовый мод?": "Disable a base mod?",
     "«{title}» — базовый мод. Без него пропадёт часть функционала (эффекты/захват/транспорт). Выключить?": "“{title}” is a base mod. Without it some functionality is gone (effects/capture/transport). Disable?",
     "Нет эффектов (включите мод «Эффекты лампы»)": "No effects (enable the “Lamp effects” mod)",
+    "Нет эффектов (включите мод «Цветомузыка»)": "No effects (enable the “Music” mod)",
+    "Эффекты режима «Цветомузыка»: спектр по периметру, пульс от баса, волны от баса, вспышки на битах. Встроенный мод — выключение уберёт эти эффекты.": "Effects for the “Music” mode: perimeter spectrum, bass pulse, bass waves, beat flashes. A built-in mod — disabling it removes these effects.",
     "Что нового": "What's new",
     "Adalight обновлён до {v}": "Adalight updated to {v}",
     "Весь список изменений": "Full changelog",

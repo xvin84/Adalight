@@ -12,6 +12,7 @@ from .base import PluginAPI
 
 BUILTIN_MODULES = (
     "adalight.plugins.builtin.effects_lamp",
+    "adalight.plugins.builtin.effects_music",
     "adalight.plugins.builtin.notifications",
 )
 

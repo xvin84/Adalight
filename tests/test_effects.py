@@ -2,7 +2,8 @@ import numpy as np
 import pytest
 
 from adalight.config import parse_hex_color
-from adalight.effects import MusicRenderer, hsv_strip, render_lamp
+from adalight.effects import hsv_strip, render_lamp
+from adalight.plugins.builtin.effects_music import MusicRenderer
 
 
 def lamp_cfg(**kw) -> dict:
@@ -189,61 +190,67 @@ def make_tone(freq: float, samplerate: int = 48000, n: int = 1024) -> np.ndarray
     return np.sin(2 * np.pi * freq * t)
 
 
+def mcfg(color: str = "#ffffff", gain: float = 1.0) -> dict:
+    return {"music_color": color, "music_gain": gain}
+
+
 def test_music_pulse_reacts_to_bass():
-    r = MusicRenderer("pulse", "#ff2d95", gain=1.0, n_leds=8)
-    bass_frames = [r.render(make_tone(60.0), 48000) for _ in range(5)]
-    silence = r.render(np.zeros(1024), 48000)
+    r = MusicRenderer("pulse", 8)
+    cfg = mcfg("#ff2d95")
+    bass_frames = [r.render(make_tone(60.0), 48000, cfg) for _ in range(5)]
+    silence = r.render(np.zeros(1024), 48000, cfg)
     # после нескольких блоков баса лента ярче, чем на тишине (уровень спадает)
     assert bass_frames[-1].max() > 0
     for _ in range(30):
-        silence = r.render(np.zeros(1024), 48000)
+        silence = r.render(np.zeros(1024), 48000, cfg)
     assert silence.max() < bass_frames[-1].max()
 
 
 def test_music_spectrum_bass_lights_strip_start():
-    r = MusicRenderer("spectrum", "#ffffff", gain=1.0, n_leds=12)
+    r = MusicRenderer("spectrum", 12)
     out = None
     for _ in range(5):
-        out = r.render(make_tone(60.0), 48000)
+        out = r.render(make_tone(60.0), 48000, mcfg())
     head = out[:3].max()   # начало ленты — низкие частоты
     tail = out[-3:].max()  # конец — высокие
     assert head > tail
 
 
 def test_music_wave_travels_outward():
-    r = MusicRenderer("wave", "#ffffff", gain=1.0, n_leds=21)
+    r = MusicRenderer("wave", 21)
     for _ in range(3):
-        r.render(make_tone(60.0), 48000)     # бас рождает волну в центре
+        r.render(make_tone(60.0), 48000, mcfg())     # бас рождает волну в центре
 
     def dist_of_peak(out: np.ndarray) -> int:
         return abs(int(out.max(axis=1).argmax()) - 10)  # расстояние пика от центра
 
     for _ in range(3):
-        a = r.render(np.zeros(1024), 48000)
+        a = r.render(np.zeros(1024), 48000, mcfg())
     for _ in range(6):
-        b = r.render(np.zeros(1024), 48000)
+        b = r.render(np.zeros(1024), 48000, mcfg())
     assert a.max() > 200 and b.max() > 200   # волна жива
     assert dist_of_peak(b) > dist_of_peak(a)  # и убегает от центра к краям
 
 
 def test_music_beat_flashes_on_kick():
-    r = MusicRenderer("beat", "#ff0000", gain=1.0, n_leds=8)
+    r = MusicRenderer("beat", 8)
+    cfg = mcfg("#ff0000")
     # долгий тихий фон: скользящая средняя привыкает, стартовая вспышка затухает
     for _ in range(50):
-        r.render(make_tone(60.0, n=1024) * 0.05, 48000)
-    quiet = r.render(make_tone(60.0, n=1024) * 0.05, 48000)
-    assert quiet.max() < 60                                # фон почти тёмный
-    kick = r.render(make_tone(60.0, n=1024) * 1.0, 48000)  # удар баса
+        r.render(make_tone(60.0, n=1024) * 0.05, 48000, cfg)
+    quiet = r.render(make_tone(60.0, n=1024) * 0.05, 48000, cfg)
+    assert quiet.max() < 60                                     # фон почти тёмный
+    kick = r.render(make_tone(60.0, n=1024) * 1.0, 48000, cfg)  # удар баса
     assert kick.max() > 200
     faded = kick
     for _ in range(12):
-        faded = r.render(make_tone(60.0, n=1024) * 0.02, 48000)
+        faded = r.render(make_tone(60.0, n=1024) * 0.02, 48000, cfg)
     assert faded.max() < 60  # между ударами затухает
 
 
 def test_music_output_bounds():
-    r = MusicRenderer("spectrum", "#ffffff", gain=5.0, n_leds=16)
-    out = r.render(np.random.default_rng(0).normal(0, 1, 1024), 48000)
+    r = MusicRenderer("spectrum", 16)
+    out = r.render(np.random.default_rng(0).normal(0, 1, 1024), 48000, mcfg(gain=5.0))
     assert out.shape == (16, 3)
     assert out.min() >= 0.0 and out.max() <= 255.0
 
