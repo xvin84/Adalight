@@ -172,8 +172,8 @@ class Config:
             raise ValueError(f"Неверный стартовый угол: {self.start_corner!r}")
         if self.direction not in DIRECTIONS:
             raise ValueError(f"Неверное направление: {self.direction!r}")
-        if self.backend not in BACKENDS:
-            raise ValueError(f"Неверный бэкенд захвата: {self.backend!r}")
+        # backend не валидируем: источник даёт мод (может быть выключен),
+        # неизвестный/недоступный create_backend сообщит дружелюбной ошибкой
         if min(self.leds_top, self.leds_right, self.leds_bottom, self.leds_left) < 0:
             raise ValueError("Количество диодов не может быть отрицательным")
         if self.total_leds == 0:

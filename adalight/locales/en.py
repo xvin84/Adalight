@@ -11,6 +11,7 @@ NAME = "English"
 
 TRANSLATIONS: dict[str, str] = {
     "Вспышки уведомлений": "Notification flashes",
+    "Источники захвата экрана: bettercam / dxcam / mss (Windows), wf-recorder / grim (Wayland). Встроенный мод — выключение оставит режим «Захват экрана» без источников.": "Screen capture sources: bettercam / dxcam / mss (Windows), wf-recorder / grim (Wayland). A built-in mod — disabling it leaves the “Screen capture” mode without sources.",
     "Эффекты лампы": "Lamp effects",
     "Эффекты режима «Лампа»: цвет, градиент, радуги, дыхание, камин, комета, северное сияние, звёздное небо. Встроенный мод — выключение уберёт эффекты.": "Effects for the “Lamp” mode: color, gradient, rainbows, breathing, fireplace, comet, aurora, starry sky. A built-in mod — disabling it removes the effects.",
     "Уведомление из Telegram — голубая вспышка на ленте, из Discord — фиолетовая. Позиция и размер настраиваются. На Windows потребуется разрешить доступ к уведомлениям (Параметры → Конфиденциальность).": "A Telegram notification — a blue flash on the strip, Discord — purple. Position and size are configurable. On Windows you'll need to grant access to notifications (Settings → Privacy).",

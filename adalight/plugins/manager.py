@@ -13,6 +13,7 @@ from .base import PluginAPI
 BUILTIN_MODULES = (
     "adalight.plugins.builtin.effects_lamp",
     "adalight.plugins.builtin.effects_music",
+    "adalight.plugins.builtin.capture",
     "adalight.plugins.builtin.notifications",
 )
 
@@ -144,10 +145,12 @@ class PluginManager:
 
     @staticmethod
     def _unregister_capabilities(loaded: LoadedPlugin) -> None:
-        """Снять всё, что мод зарегистрировал (при выключении)."""
-        from ..effects import unregister_source
+        """Снять всё, что мод зарегистрировал (эффекты, источники захвата)."""
+        from ..capture import unregister_source as unregister_capture
+        from ..effects import unregister_source as unregister_effects
 
-        unregister_source(loaded.name)
+        unregister_effects(loaded.name)
+        unregister_capture(loaded.name)
 
     def get(self, name: str) -> LoadedPlugin | None:
         return next((p for p in self.plugins if p.name == name), None)

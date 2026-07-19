@@ -55,7 +55,6 @@ def test_validate_accepts_defaults():
         {"smooth": 1.0},
         {"target_fps": 0},
         {"band_size": 0.0},
-        {"backend": "opengl"},
         {"schedule_enabled": True, "schedule": [{"start": "8", "end": "9", "brightness": 1}]},
         {"adaptive_min": 0.9, "adaptive_max": 0.2},
         {"adaptive_speed": 0.0},

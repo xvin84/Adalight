@@ -76,6 +76,14 @@ def main(argv: list[str] | None = None) -> int:
     else:
         mode = "live"
 
+    # включаем базовые моды (эффекты лампы/цветомузыки, источники захвата) —
+    # без них движок остался бы без эффектов и источника (GUI делает это же)
+    from .plugins import PluginAPI, PluginManager
+
+    PluginManager(PluginAPI(flash=lambda *a: None, notify=lambda *a: None)).apply(
+        cfg.plugins
+    )
+
     try:
         engine = Engine(cfg, on_fps=lambda f: print(f"\r~{f:.1f} fps   ", end="", flush=True))
     except ValueError as e:

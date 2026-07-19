@@ -1,3 +1,3 @@
 """Adalight ambilight: захват экрана -> цвета краёв -> LED-лента по serial."""
 
-__version__ = "0.18.0"
+__version__ = "0.19.0"

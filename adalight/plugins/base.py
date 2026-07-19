@@ -96,6 +96,21 @@ class PluginAPI:
             effect_id, label, factory, wants_color=wants_color, source=self._source
         )
 
+    def register_capture_source(
+        self, source_id: str, label: str, factory, *,
+        platforms: tuple[str, ...] = ("any",), priority: int = 50,
+    ) -> None:
+        """Добавить источник захвата экрана. factory(cfg) -> объект-бэкенд
+        (width/height, get_frame()/get_bands(), supports_bands, close()).
+        platforms — где работает (win/wayland/linux/any); priority — порядок
+        выбора в режиме «auto» (меньше — раньше)."""
+        from ..capture import register_capture_source
+
+        register_capture_source(
+            source_id, label, factory,
+            platforms=platforms, priority=priority, source=self._source,
+        )
+
     def notify(self, title: str, text: str) -> None:
         """Системное уведомление из трея (уважает настройку «Уведомления в трее»)."""
         self._notify(title, text)

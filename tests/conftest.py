@@ -11,6 +11,7 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _builtin_effects():
+    from adalight.capture import register_builtin_capture_sources
     from adalight.effects import register_lamp_effect, register_music_effect
     from adalight.plugins.builtin import effects_lamp, effects_music
 
@@ -22,4 +23,5 @@ def _builtin_effects():
             lambda n, e=effect_id: effects_music.MusicRenderer(e, n),
             wants_color=wants_color, source="effects_music",
         )
+    register_builtin_capture_sources(source="capture")
     yield

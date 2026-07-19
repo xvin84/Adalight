@@ -4,6 +4,14 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/);
 versions follow [SemVer](https://semver.org/). Full diffs are in the
 [GitHub releases](https://github.com/xvin84/Adalight/releases).
 
+## [0.19.0] — 2026-07-19
+
+- "Everything is a mod", stage 3: screen capture sources became a built-in
+  "Screen capture" mod — visible and manageable in the plugin manager.
+- A plugin can add its own capture source.
+- Headless mode (CLI) now also loads the built-in mods — effects and capture
+  work without the GUI too.
+
 ## [0.18.0] — 2026-07-19
 
 - "Everything is a mod", stage 2: the "Music" mode effects became a built-in

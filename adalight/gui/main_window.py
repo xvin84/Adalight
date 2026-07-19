@@ -78,9 +78,8 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__, autostart, updates, whatsnew
-from ..capture import list_outputs
+from ..capture import capture_sources, list_outputs
 from ..config import (
-    BACKENDS,
     COLOR_ORDERS,
     DIRECTIONS,
     MODES,
@@ -728,7 +727,7 @@ class MainWindow(QMainWindow):
         form.addRow(tr("Монитор:"), row)
 
         self.cb_backend = QComboBox()
-        self.cb_backend.addItems(BACKENDS)
+        self._fill_backends()
         self.cb_backend.setToolTip(
             tr("auto: Windows — bettercam → dxcam → mss, Wayland — wf-recorder, иначе mss.\n"
             "Реально работающий бэкенд показан в статус-баре.")
@@ -831,6 +830,18 @@ class MainWindow(QMainWindow):
 
         self._sync_music_rows()
         return g
+
+    def _fill_backends(self) -> None:
+        """Список бэкендов захвата: «auto» + источники из реестра (мод «Захват»)."""
+        cur = self.cb_backend.currentText()
+        self.cb_backend.blockSignals(True)
+        self.cb_backend.clear()
+        self.cb_backend.addItem("auto")
+        for spec in capture_sources():
+            self.cb_backend.addItem(spec.id)
+        if cur:
+            self.cb_backend.setCurrentText(cur)
+        self.cb_backend.blockSignals(False)
 
     def _fill_lamp_effects(self) -> None:
         """Заполнить список эффектов из реестра (в т.ч. эффекты плагинов)."""
@@ -1571,6 +1582,7 @@ class MainWindow(QMainWindow):
         self._refresh_plugins_summary()
         self._fill_lamp_effects()  # мод мог добавить/убрать эффекты
         self._fill_music_effects()
+        self._fill_backends()
 
     def flash_test(self, entry: dict) -> None:
         if self.thread is None or self._mode not in _MAIN_MODES:
@@ -2091,6 +2103,7 @@ class MainWindow(QMainWindow):
 
         self._refresh_outputs()
         self.cb_output.setCurrentText(cfg.output)
+        self._fill_backends()  # источники захвата из реестра (мод «Захват экрана»)
         self.cb_backend.setCurrentText(cfg.backend)
         self.sp_fps.setValue(cfg.target_fps)
         self.ds_band.setValue(cfg.band_size)

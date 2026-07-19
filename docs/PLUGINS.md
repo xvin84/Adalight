@@ -186,6 +186,16 @@ def create_plugin():
 `factory(n_leds)` создаёт объект с методом `render(samples, samplerate, cfg)`
 (cfg — `music_color`/`music_gain`, читаются на лету).
 
+## Свой источник захвата
+
+Можно добавить свой источник захвата экрана:
+`api.register_capture_source(id, label, factory, platforms=("win",…), priority=50)`.
+`factory(cfg)` создаёт объект-бэкенд: поля `width`/`height`, метод
+`get_frame() -> RGB (H, W, 3) uint8 | None`, необязательный `get_bands(rects)`
+(если `supports_bands=True`), `close()`. `platforms` — где источник работает
+(`win`/`wayland`/`linux`/`any`); `priority` — порядок выбора в режиме «auto»
+(меньше — раньше).
+
 ## Локали (языки интерфейса)
 
 Язык — это тоже плагин. Файл кладётся в ту же папку плагинов, но вместо
