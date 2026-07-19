@@ -46,6 +46,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QColorDialog,
     QComboBox,
+    QDialog,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
@@ -70,12 +71,13 @@ from PySide6.QtWidgets import (
     QSystemTrayIcon,
     QTableWidget,
     QTableWidgetItem,
+    QTextBrowser,
     QTimeEdit,
     QVBoxLayout,
     QWidget,
 )
 
-from .. import __version__, autostart, updates
+from .. import __version__, autostart, updates, whatsnew
 from ..capture import list_outputs
 from ..config import (
     BACKENDS,
@@ -390,6 +392,7 @@ class MainWindow(QMainWindow):
         self._notified_version = ""
         self._startup_check = True   # первый чек после запуска — можно автообновляться
         self._auto_updating = False
+        self._whats_new_done = False  # окно «Что нового» — раз за запуск
         self._booting = False
         self._boot_retry = 0
 
@@ -1550,17 +1553,80 @@ class MainWindow(QMainWindow):
             if answer != QMessageBox.StandardButton.Yes:
                 return False
         try:
-            cat.install(entry)
+            path = cat.install(entry)
         except (OSError, ValueError) as e:
             QMessageBox.warning(
                 parent, tr("Каталог"),
                 tr("Не удалось установить: {e}").format(e=e),
             )
             return False
-        self._toast(
-            tr("«{title}» установлен — перезапустите программу, "
-               "чтобы плагин появился в списке").format(title=entry.title)
-        )
+        # загружаем без перезапуска: плагин — в менеджер, локаль — в список языков
+        loaded = self.plugin_manager.install_from_path(path)
+        if loaded is None:
+            self._reload_locales()
+            self._toast(
+                tr("«{title}» установлен — язык доступен в «Система → Язык»")
+                .format(title=entry.title)
+            )
+        else:
+            self._plugins_cfg.setdefault(loaded.name, {})
+            self.plugin_manager.apply(self._plugins_cfg)
+            self._refresh_plugins_summary()
+            self._toast(tr("«{title}» установлен").format(title=entry.title))
+        return True
+
+    def _reload_locales(self) -> None:
+        """Перечитать локали и обновить список языков (после установки языка)."""
+        self._register_locales()
+        current = self.cfg.language
+        self.cb_language.blockSignals(True)
+        self.cb_language.clear()
+        for code, name in available_languages():
+            self.cb_language.addItem(name, code)
+        idx = self.cb_language.findData(current)
+        self.cb_language.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cb_language.blockSignals(False)
+
+    # ── языки в менеджере плагинов ────────────────────────────────────────
+
+    def installed_locales(self) -> list:
+        """Все языки (русский-исходный, встроенные, установленные) для менеджера."""
+        from ..plugins.manager import LoadedLocale, discover_locales
+
+        user = {loc.code: loc for loc in discover_locales()}
+        out = []
+        for code, name in available_languages():
+            out.append(user.get(code) or LoadedLocale(code, name, {}, builtin=True))
+        return out
+
+    def current_language(self) -> str:
+        return self.cfg.language
+
+    def set_ui_language(self, code: str) -> None:
+        if code == self.cfg.language:
+            return
+        self.cfg.language = code
+        self.cfg.save()
+        set_language(code)
+        idx = self.cb_language.findData(code)
+        if idx >= 0:
+            self.cb_language.blockSignals(True)
+            self.cb_language.setCurrentIndex(idx)
+            self.cb_language.blockSignals(False)
+        self._toast(tr("Язык сменится после перезапуска программы"))
+
+    def delete_locale(self, loc) -> bool:
+        if loc.path is None:
+            return False
+        try:
+            loc.path.unlink()
+        except OSError as e:
+            QMessageBox.warning(
+                self, tr("Плагины"), tr("Не удалось удалить: {e}").format(e=e)
+            )
+            return False
+        self._reload_locales()
+        self._toast(tr("«{title}» удалён").format(title=loc.name))
         return True
 
     def delete_plugin(self, loaded) -> bool:
@@ -1673,6 +1739,72 @@ class MainWindow(QMainWindow):
 
     def _show_about(self) -> None:
         QMessageBox.about(self, tr("О программе"), _about_html())
+
+    # ── «Что нового» после обновления ─────────────────────────────────────
+
+    def check_whats_new(self, first_run: bool = False) -> None:
+        """Показать изменения, если версия сменилась с прошлого запуска."""
+        if self._whats_new_done:
+            return
+        self._whats_new_done = True
+        last = str(self._settings.value("last_seen_version", ""))
+        self._settings.setValue("last_seen_version", __version__)
+        if first_run or last == __version__:
+            return  # чистая установка или та же версия — показывать нечего
+        if whatsnew.update_notes(last, __version__, "ru"):  # есть ли что показать
+            self._show_whats_new(last)
+
+    def _show_whats_new(self, last: str) -> None:
+        self._whats_new_dialog(last).exec()
+
+    def _whats_new_dialog(self, last: str) -> QDialog:
+        dlg = QDialog(self)
+        dlg.setWindowTitle(tr("Что нового"))
+        dlg.resize(560, 520)
+        lay = QVBoxLayout(dlg)
+
+        top = QHBoxLayout()
+        header = QLabel(tr("Adalight обновлён до {v}").format(v=__version__))
+        header.setObjectName("heroState")
+        top.addWidget(header)
+        top.addStretch(1)
+        # язык списка изменений — по умолчанию язык интерфейса, меняется на лету
+        cb_lang = QComboBox()
+        names = dict(available_languages())
+        langs = whatsnew.available_changelog_langs()
+        for code in langs:
+            cb_lang.addItem(names.get(code, code), code)
+        default = self.cfg.language if self.cfg.language in langs else "ru"
+        cb_lang.setCurrentIndex(max(cb_lang.findData(default), 0))
+        top.addWidget(QLabel(tr("Язык:")))
+        top.addWidget(cb_lang)
+        lay.addLayout(top)
+
+        browser = QTextBrowser()
+        browser.setOpenExternalLinks(True)
+        lay.addWidget(browser, 1)
+
+        def render() -> None:
+            browser.setMarkdown(
+                whatsnew.update_notes(last, __version__, cb_lang.currentData())
+            )
+
+        cb_lang.currentIndexChanged.connect(render)
+        render()
+
+        row = QHBoxLayout()
+        link = QLabel(
+            '<a href="https://github.com/xvin84/Adalight/blob/main/CHANGELOG.md">'
+            f"{tr('Весь список изменений')}</a>"
+        )
+        link.setOpenExternalLinks(True)
+        btn = QPushButton(tr("Понятно"))
+        btn.clicked.connect(dlg.accept)
+        row.addWidget(link)
+        row.addStretch(1)
+        row.addWidget(btn)
+        lay.addLayout(row)
+        return dlg
 
     # ── обновления ────────────────────────────────────────────────────────
 
@@ -2384,6 +2516,7 @@ class MainWindow(QMainWindow):
         self.showNormal()
         self.raise_()
         self.activateWindow()
+        self.check_whats_new()  # автозапуск в трее увидит изменения при открытии окна
 
     def _quit(self) -> None:
         self._quitting = True
@@ -2439,4 +2572,5 @@ def run(minimized: bool = False) -> int:
         win.show()
         if first_run:
             QTimer.singleShot(400, win._open_wizard)
+        QTimer.singleShot(600, lambda: win.check_whats_new(first_run))
     return app.exec()

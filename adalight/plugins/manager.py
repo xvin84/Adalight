@@ -83,6 +83,8 @@ class LoadedLocale:
     code: str
     name: str
     translations: dict
+    builtin: bool = False
+    path: Path | None = None
 
 
 def discover_locales() -> list[LoadedLocale]:
@@ -106,6 +108,7 @@ def discover_locales() -> list[LoadedLocale]:
                     code=str(loc.code),
                     name=str(getattr(loc, "name", loc.code)),
                     translations=dict(getattr(loc, "translations", {})),
+                    path=path,
                 )
             )
         except Exception:  # noqa: BLE001 — битая локаль не должна ронять запуск
@@ -120,6 +123,39 @@ class PluginManager:
 
     def get(self, name: str) -> LoadedPlugin | None:
         return next((p for p in self.plugins if p.name == name), None)
+
+    def install_from_path(self, path: Path) -> LoadedPlugin | None:
+        """Загрузить только что установленный плагин без перезапуска.
+
+        Возвращает LoadedPlugin (в т.ч. с error) или None, если файл — не плагин
+        (например, локаль с create_locale). Плагин с тем же именем заменяется.
+        """
+        try:
+            spec = importlib.util.spec_from_file_location(
+                f"adalight_user_plugin_{path.stem}_{id(path)}", path
+            )
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        except Exception as e:  # noqa: BLE001
+            loaded = LoadedPlugin(None, path.stem, path.name, "", error=str(e), path=path)
+            self._replace(loaded)
+            return loaded
+        if not hasattr(module, "create_plugin"):
+            return None  # локаль или иной файл — не плагин
+        try:
+            loaded = _load_from_module(module, path=path)
+        except Exception as e:  # noqa: BLE001
+            loaded = LoadedPlugin(None, path.stem, path.name, "", error=str(e), path=path)
+        self._replace(loaded)
+        return loaded
+
+    def _replace(self, loaded: LoadedPlugin) -> None:
+        existing = self.get(loaded.name)
+        if existing is not None:
+            if existing.running:
+                self._stop(existing)
+            self.plugins = [p for p in self.plugins if p is not existing]
+        self.plugins.append(loaded)
 
     def apply(self, plugins_cfg: dict) -> None:
         """Привести плагины к конфигу: включённые запустить, выключенные остановить.

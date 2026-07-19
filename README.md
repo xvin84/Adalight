@@ -45,7 +45,9 @@ layout, and a tray icon so the lighting keeps running with the window closed.
   cut-off so dark scenes don't make the LEDs glow with noise.
 - **Auto-update**: the app checks GitHub Releases, downloads the new binary and
   restarts itself — no manual downloading; with "update automatically" enabled
-  new versions install silently at startup.
+  new versions install silently at startup. After an update a **"What's new"**
+  dialog shows the changelog (across several versions too), in the interface
+  language with a language switch right in the window.
 - **Plugin manager**: a dedicated window with two views — *Installed*
   (enable/disable, per-plugin settings, delete) and *Catalog* (search and
   one-click install official/community plugins). Plugins are .py files with

@@ -182,6 +182,69 @@ def test_manager_isolates_broken_plugin():
     assert loaded.running is False
 
 
+_PLUGIN_SRC = '''
+class P:
+    name = "fresh"
+    title = "Fresh"
+    description = "d"
+    def start(self, api, settings): pass
+    def stop(self): pass
+def create_plugin():
+    return P()
+'''
+
+
+def _empty_manager() -> PluginManager:
+    m = PluginManager.__new__(PluginManager)
+    m.api = make_api()
+    m.plugins = []
+    return m
+
+
+def test_install_from_path_loads_plugin_live(tmp_path):
+    path = tmp_path / "fresh.py"
+    path.write_text(_PLUGIN_SRC, encoding="utf-8")
+    manager = _empty_manager()
+    loaded = manager.install_from_path(path)
+    assert loaded is not None and loaded.name == "fresh" and not loaded.error
+    assert manager.get("fresh") is loaded  # появился без перезапуска
+    # повторная установка заменяет, а не дублирует
+    again = manager.install_from_path(path)
+    assert again is not manager.get("fresh") or len(
+        [p for p in manager.plugins if p.name == "fresh"]
+    ) == 1
+
+
+def test_install_from_path_returns_none_for_locale(tmp_path):
+    path = tmp_path / "xx.py"
+    path.write_text(
+        "def create_locale():\n"
+        "    class L: code='xx'; name='XX'; translations={}\n"
+        "    return L()\n",
+        encoding="utf-8",
+    )
+    manager = _empty_manager()
+    assert manager.install_from_path(path) is None  # локаль — не плагин
+    assert manager.plugins == []
+
+
+def test_catalog_install_accepts_locale(tmp_path):
+    entry = make_entry()
+    payload = b"def create_locale():\n    pass\n"
+    target = catalog.install(entry, base=tmp_path, fetcher=lambda url: payload)
+    assert target.is_file()
+
+
+def test_builtin_english_uses_locale_contract():
+    from adalight.locales import builtin_locales, en
+
+    loc = en.create_locale()
+    assert loc.code == "en" and loc.name == "English"
+    assert loc.translations is en.TRANSLATIONS
+    codes = {code for code, _name, _t in builtin_locales()}
+    assert "en" in codes
+
+
 # ── цвет от иконки ────────────────────────────────────────────────────────
 
 

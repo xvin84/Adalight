@@ -72,10 +72,10 @@ def install(
 ) -> Path:
     """Скачивает плагин в папку плагинов; повторная установка = обновление."""
     data = fetcher(entry.url)
-    if b"create_plugin" not in data:
+    if b"create_plugin" not in data and b"create_locale" not in data:
         raise ValueError(
             f"Файл по адресу {entry.url} не похож на плагин Adalight "
-            "(нет функции create_plugin)"
+            "(нет функции create_plugin или create_locale)"
         )
     target_dir = base or plugins_dir()
     target_dir.mkdir(parents=True, exist_ok=True)

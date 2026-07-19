@@ -96,13 +96,31 @@ class PluginManagerWindow(QDialog):
         self.lbl_err.setObjectName("hintLabel")
         self.lbl_err.hide()
 
+        # для языков: кнопка «сделать языком интерфейса» вместо галочки «Включён»
+        self.btn_use_lang = QPushButton(tr("Сделать языком интерфейса"))
+        self.btn_use_lang.clicked.connect(self._on_use_language)
+        self.btn_use_lang.hide()
+
         self.settings_host = QVBoxLayout()
 
-        for w in (self.lbl_title, self.lbl_meta, self.lbl_desc, self.ch_enabled, self.lbl_err):
+        for w in (self.lbl_title, self.lbl_meta, self.lbl_desc, self.ch_enabled,
+                  self.btn_use_lang, self.lbl_err):
             self.detail.addWidget(w)
         self.detail.addLayout(self.settings_host)
         self.detail.addStretch(1)
 
+        # прокрутка: настройки берут натуральную высоту и не наезжают строками
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setWidget(right)
+
+        right_col = QWidget()
+        right_v = QVBoxLayout(right_col)
+        right_v.setContentsMargins(0, 0, 0, 0)
+        right_v.addWidget(scroll, 1)
+
+        # нижняя панель — вне прокрутки, всегда видна
         bottom = QHBoxLayout()
         btn_dir = QPushButton(tr("Открыть папку плагинов"))
         btn_dir.clicked.connect(self.ctrl.open_plugins_dir)
@@ -112,55 +130,92 @@ class PluginManagerWindow(QDialog):
         bottom.addWidget(btn_dir)
         bottom.addStretch(1)
         bottom.addWidget(self.btn_delete)
-        self.detail.addLayout(bottom)
+        right_v.addLayout(bottom)
 
-        lay.addWidget(right, 1)
+        lay.addWidget(right_col, 1)
         return page
 
     def refresh_installed(self) -> None:
         prev = self.list.currentRow()
         self.list.clear()
+        self._locales = {loc.code: loc for loc in self.ctrl.installed_locales()}
         cfg = self.ctrl.plugins_cfg()
         for loaded in self.ctrl.manager.plugins:
             enabled = bool(cfg.get(loaded.name, {}).get("enabled", False))
             mark = "⚠" if loaded.error else ("●" if enabled else "○")
             item = QListWidgetItem(f"{mark}  {tr(loaded.title)}")
-            item.setData(Qt.ItemDataRole.UserRole, loaded.name)
+            item.setData(Qt.ItemDataRole.UserRole, ("plugin", loaded.name))
+            self.list.addItem(item)
+        cur = self.ctrl.current_language()
+        for loc in self._locales.values():
+            mark = "●" if loc.code == cur else "○"
+            item = QListWidgetItem(f"{mark}  {loc.name}")
+            item.setData(Qt.ItemDataRole.UserRole, ("locale", loc.code))
             self.list.addItem(item)
         if self.list.count():
             self.list.setCurrentRow(min(max(prev, 0), self.list.count() - 1))
 
-    def _current_loaded(self):
+    def _current_ref(self):
         item = self.list.currentItem()
         if item is None:
-            return None
-        name = item.data(Qt.ItemDataRole.UserRole)
-        return self.ctrl.manager.get(name)
+            return None, None
+        kind, key = item.data(Qt.ItemDataRole.UserRole)
+        if kind == "plugin":
+            return "plugin", self.ctrl.manager.get(key)
+        return "locale", self._locales.get(key)
+
+    def _current_loaded(self):
+        kind, obj = self._current_ref()
+        return obj if kind == "plugin" else None
 
     def _on_select(self, _row: int) -> None:
-        loaded = self._current_loaded()
-        if loaded is None:
+        kind, obj = self._current_ref()
+        if obj is None:
             return
         self._loading = True
+        self._clear_settings_widget()
+        if kind == "locale":
+            self._show_locale(obj)
+        else:
+            self._show_plugin(obj)
+        self._loading = False
+
+    def _show_plugin(self, loaded) -> None:
+        self.btn_use_lang.hide()
+        self.ch_enabled.show()
         badge = tr("встроенный") if loaded.builtin else tr("установленный")
         ver = f" · v{loaded.version}" if loaded.version else ""
         self.lbl_title.setText(tr(loaded.title))
         self.lbl_meta.setText(f"{badge}{ver}")
         self.lbl_desc.setText(tr(loaded.description) if loaded.description else loaded.name)
         self.btn_delete.setVisible(not loaded.builtin and loaded.path is not None)
-
         if loaded.error:
             self.lbl_err.setText(tr("⚠ Ошибка: {e}").format(e=loaded.error))
             self.lbl_err.show()
         else:
             self.lbl_err.hide()
-
-        cfg = self.ctrl.plugins_cfg()
-        entry = cfg.get(loaded.name, {})
+        entry = self.ctrl.plugins_cfg().get(loaded.name, {})
         self.ch_enabled.setEnabled(loaded.plugin is not None)
         self.ch_enabled.setChecked(bool(entry.get("enabled", False)))
         self._build_settings(loaded, entry)
-        self._loading = False
+
+    def _show_locale(self, loc) -> None:
+        self.ch_enabled.hide()
+        self.lbl_err.hide()
+        active = loc.code == self.ctrl.current_language()
+        badge = tr("язык · встроенный") if loc.builtin else tr("язык · установленный")
+        self.lbl_title.setText(loc.name)
+        self.lbl_meta.setText(badge)
+        self.lbl_desc.setText(
+            tr("Текущий язык интерфейса.") if active
+            else tr("Язык интерфейса. Выбор применяется после перезапуска.")
+        )
+        self.btn_use_lang.show()
+        self.btn_use_lang.setEnabled(not active)
+        self.btn_use_lang.setText(
+            tr("Текущий язык") if active else tr("Сделать языком интерфейса")
+        )
+        self.btn_delete.setVisible(not loc.builtin and loc.path is not None)
 
     def _clear_settings_widget(self) -> None:
         if self._settings_widget is not None:
@@ -219,18 +274,27 @@ class PluginManagerWindow(QDialog):
             return
         self._apply_current()
 
-    def _on_delete(self) -> None:
-        loaded = self._current_loaded()
-        if loaded is None or loaded.path is None:
+    def _on_use_language(self) -> None:
+        kind, loc = self._current_ref()
+        if kind != "locale" or loc is None:
             return
+        self.ctrl.set_ui_language(loc.code)
+        self.refresh_installed()
+
+    def _on_delete(self) -> None:
+        kind, obj = self._current_ref()
+        if obj is None or obj.path is None:
+            return
+        title = obj.title if kind == "plugin" else obj.name
         if QMessageBox.question(
             self, tr("Удалить плагин"),
             tr("Удалить файл плагина «{title}»?\n{path}").format(
-                title=loaded.title, path=loaded.path
+                title=title, path=obj.path
             ),
         ) != QMessageBox.StandardButton.Yes:
             return
-        if self.ctrl.delete_plugin(loaded):
+        ok = self.ctrl.delete_plugin(obj) if kind == "plugin" else self.ctrl.delete_locale(obj)
+        if ok:
             self.refresh_installed()
 
     # ── вид «Каталог» ─────────────────────────────────────────────────────
@@ -313,10 +377,15 @@ class PluginManagerWindow(QDialog):
                 f"{entry.description}"
             )
             text.setWordWrap(True)
-            installed = self.ctrl.is_installed(entry.name)
-            btn = QPushButton(tr("Обновить") if installed else tr("Установить"))
+            btn = QPushButton()
             btn.setFixedWidth(110)
-            btn.clicked.connect(lambda _=False, e=entry, b=btn: self._install(e, b))
+            if self.ctrl.is_installed(entry.name):
+                self._mark_installed(card, btn)
+            else:
+                btn.setText(tr("Установить"))
+                btn.clicked.connect(
+                    lambda _=False, e=entry, b=btn, c=card: self._install(e, b, c)
+                )
             row.addWidget(text, 1)
             row.addWidget(btn, 0, Qt.AlignmentFlag.AlignTop)
             self.catalog_lay.insertWidget(self.catalog_lay.count() - 1, card)
@@ -325,6 +394,13 @@ class PluginManagerWindow(QDialog):
             empty.setObjectName("heroSub")
             self.catalog_lay.insertWidget(0, empty)
 
-    def _install(self, entry, btn: QPushButton) -> None:
+    def _mark_installed(self, card: QWidget, btn: QPushButton) -> None:
+        """Уже установленное — приглушённая карточка и неактивная кнопка."""
+        btn.setText(tr("Установлено"))
+        btn.setEnabled(False)
+        card.setEnabled(False)  # серый вид; управление — во вкладке «Установленные»
+
+    def _install(self, entry, btn: QPushButton, card: QWidget) -> None:
         if self.ctrl.install_entry(entry, self):
-            btn.setText(tr("Обновить"))
+            self._mark_installed(card, btn)
+            self.refresh_installed()  # новый плагин появляется без перезапуска

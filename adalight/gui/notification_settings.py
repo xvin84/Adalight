@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QSlider,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -31,8 +32,10 @@ class NotificationSettingsWidget(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        form = QFormLayout(self)
-        form.setContentsMargins(0, 0, 0, 0)
+        # подсказка — в вертикальном layout (там перенос строк считает высоту),
+        # а не в QFormLayout, который height-for-width не поддерживает
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
 
         hint = QLabel(
             tr("Ловятся только <b>системные</b> уведомления. Если приложение рисует "
@@ -42,7 +45,11 @@ class NotificationSettingsWidget(QWidget):
         )
         hint.setWordWrap(True)
         hint.setObjectName("hintLabel")
-        form.addRow(hint)
+        outer.addWidget(hint)
+
+        form = QFormLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        outer.addLayout(form)
 
         self.picker = FlashPositionPicker()
         self.picker.changed.connect(self.changed)

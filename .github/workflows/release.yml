@@ -40,6 +40,8 @@ jobs:
           --name Adalight
           --icon assets/icon.ico
           --add-data "assets/icon.png;assets"
+          --add-data "CHANGELOG.md;."
+          --add-data "CHANGELOG.en.md;."
           --collect-submodules comtypes
           --collect-all soundcard
           --collect-submodules winrt
@@ -87,6 +89,8 @@ jobs:
           uv run pyinstaller --noconfirm --onefile
           --name Adalight-linux-x86_64
           --add-data "assets/icon.png:assets"
+          --add-data "CHANGELOG.md:."
+          --add-data "CHANGELOG.en.md:."
           --collect-all soundcard
           main.py
 

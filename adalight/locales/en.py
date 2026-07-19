@@ -30,7 +30,8 @@ TRANSLATIONS: dict[str, str] = {
     "«{name}» — встроенный пресет, выберите другое имя.": "“{name}” is a built-in preset, choose another name.",
     "«{title}» создан сообществом, а не автором Adalight.\nПлагин — это код, который будет выполняться на вашем компьютере.\nУстановить?": "“{title}” was made by the community, not by the author of Adalight.\nA plugin is code that will run on your computer.\nInstall?",
     "«{title}» удалён": "“{title}” removed",
-    "«{title}» установлен — перезапустите программу, чтобы плагин появился в списке": "“{title}” installed — restart the app for the plugin to appear in the list",
+    "«{title}» установлен": "“{title}” installed",
+    "«{title}» установлен — язык доступен в «Система → Язык»": "“{title}” installed — the language is available in System → Language",
     "«Бульк» — яркая капля с расходящейся по ленте волной; «Пятно» — мягкая вспышка на месте.": "“Ripple” — a bright drop with a wave spreading along the strip; “Blob” — a soft flash in place.",
     "Автозапуск": "Autostart",
     "Автозапуск включён": "Autostart enabled",
@@ -288,6 +289,13 @@ TRANSLATIONS: dict[str, str] = {
     "Удалить точку": "Delete point",
     "Удалить файл плагина «{title}»?\n{path}": "Delete the plugin file “{title}”?\n{path}",
     "Установить": "Install",
+    "Установлено": "Installed",
+    "Сделать языком интерфейса": "Use as interface language",
+    "Текущий язык": "Current language",
+    "Текущий язык интерфейса.": "The current interface language.",
+    "Язык интерфейса. Выбор применяется после перезапуска.": "Interface language. The choice applies after a restart.",
+    "язык · встроенный": "language · built-in",
+    "язык · установленный": "language · installed",
     "Установленные": "Installed",
     "Устройство": "Device",
     "Фоновая подсветка (ambilight) для LED-ленты: захват экрана, лампа и цветомузыка. Windows и Linux/Wayland.": "Ambient lighting (ambilight) for an LED strip: screen capture, lamp and music. Windows and Linux/Wayland.",
@@ -297,6 +305,10 @@ TRANSLATIONS: dict[str, str] = {
     "Цветомузыка": "Music",
     "Целевой FPS:": "Target FPS:",
     "Что-то пошло не так.": "Something went wrong.",
+    "Что нового": "What's new",
+    "Adalight обновлён до {v}": "Adalight updated to {v}",
+    "Весь список изменений": "Full changelog",
+    "Понятно": "Got it",
     "Чувствительность:": "Sensitivity:",
     "Чувствительность: больше — ярче реакция на звук": "Sensitivity: higher — a stronger reaction to sound",
     "Ширина окна одного диода, доля экрана": "Width of one LED's window, fraction of the screen",
@@ -336,3 +348,14 @@ TRANSLATIONS: dict[str, str] = {
     "⬇ Доступна v{v}": "⬇ v{v} available",
     "⬇ Обновить до v{v}": "⬇ Update to v{v}",
 }
+
+
+class _EnglishLocale:
+    code = CODE
+    name = NAME
+    translations = TRANSLATIONS
+
+
+def create_locale() -> _EnglishLocale:
+    """Тот же контракт, что у локалей-плагинов; английский просто встроен."""
+    return _EnglishLocale()
