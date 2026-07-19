@@ -43,14 +43,9 @@ class PlasmaPlugin:
     version = "1.0"
 
     def register(self, api) -> None:
-        """Вызывается при загрузке — регистрируем эффект в общем реестре."""
+        """Вызывается при ВКЛЮЧЕНИИ мода — регистрируем эффект в общем реестре.
+        При выключении мода Adalight сам снимет его эффекты."""
         api.register_lamp_effect("plasma", "Плазма", _plasma, wants_speed=True)
-
-    def start(self, api, settings: dict) -> None:
-        pass  # эффект работает и без включения — он часть набора эффектов
-
-    def stop(self) -> None:
-        pass
 
 
 def create_plugin() -> PlasmaPlugin:

@@ -28,10 +28,16 @@ class PluginAPI:
         flash: Callable[..., None],
         notify: Callable[[str, str], None],
         log: Callable[[str], None] | None = None,
+        source: str = "",
     ):
         self._flash = flash
         self._notify = notify
         self._log = log or (lambda message: None)
+        self._source = source  # имя мода — чтобы помечать его регистрации
+
+    def bound(self, source: str) -> PluginAPI:
+        """Копия API, помечающая регистрации именем мода (для снятия при выкл.)."""
+        return PluginAPI(self._flash, self._notify, self._log, source)
 
     def trigger_flash(
         self,
@@ -57,19 +63,24 @@ class PluginAPI:
         *,
         wants_color: bool = False,
         wants_speed: bool = False,
+        wants_gradient: bool = False,
+        wants_fire: bool = False,
     ) -> None:
         """Добавить свой эффект лампы — он появится в списке эффектов наравне со
         встроенными («всё есть мод»).
 
         render(cfg_like, n, t, points) -> RGB-массив (n, 3) в 0..255: cfg_like —
         словарь настроек лампы (lamp_color/lamp_speed/…), n — число диодов,
-        t — секунды, points — раскладка (side, x, y). wants_color/wants_speed
-        подсказывают GUI, показывать ли контролы цвета и скорости.
+        t — секунды, points — раскладка (side, x, y). Флаги wants_* подсказывают
+        GUI, какие контролы показать: цвет, скорость, редактор градиента
+        (cfg["lamp_gradient"]), настройки камина (cfg["fire_*"]).
         """
         from ..effects import register_lamp_effect
 
         register_lamp_effect(
-            effect_id, label, render, wants_color=wants_color, wants_speed=wants_speed
+            effect_id, label, render,
+            wants_color=wants_color, wants_speed=wants_speed,
+            wants_gradient=wants_gradient, wants_fire=wants_fire, source=self._source,
         )
 
     def notify(self, title: str, text: str) -> None:

@@ -10,7 +10,10 @@ from pathlib import Path
 from ..config import default_config_path
 from .base import PluginAPI
 
-BUILTIN_MODULES = ("adalight.plugins.builtin.notifications",)
+BUILTIN_MODULES = (
+    "adalight.plugins.builtin.effects_lamp",
+    "adalight.plugins.builtin.notifications",
+)
 
 
 def plugins_dir() -> Path:
@@ -30,6 +33,7 @@ class LoadedPlugin:
     version: str = ""
     schema: list | None = None
     path: Path | None = None
+    base: bool = False  # базовый мод (эффекты/захват/…): предупреждать при выключении
 
 
 def _load_from_module(module, *, builtin: bool = False, path: Path | None = None) -> LoadedPlugin:
@@ -43,6 +47,7 @@ def _load_from_module(module, *, builtin: bool = False, path: Path | None = None
         version=str(getattr(plugin, "version", "")),
         schema=getattr(plugin, "settings_schema", None),
         path=path,
+        base=bool(getattr(plugin, "base", False)),
     )
 
 
@@ -120,23 +125,28 @@ class PluginManager:
     def __init__(self, api: PluginAPI):
         self.api = api
         self.plugins: list[LoadedPlugin] = discover()
-        for loaded in self.plugins:
-            self._register_extensions(loaded)
+        # возможности (эффекты и т.п.) регистрируются при ВКЛЮЧЕНИИ в apply(),
+        # а не при загрузке — чтобы выключение мода реально убирало функционал
 
     def _register_extensions(self, loaded: LoadedPlugin) -> None:
-        """Дать плагину зарегистрировать расширения (эффекты и т.п.) при загрузке.
+        """Дать моду зарегистрировать возможности (эффекты и т.п.) при включении.
 
-        Необязательный метод plugin.register(api) вызывается один раз — так
-        эффект плагина появляется в списке, пока плагин установлен.
+        Необязательный метод mod.register(api) вызывается с API, помеченным
+        именем мода, — чтобы при выключении снять именно его регистрации.
         """
-        if loaded.plugin is None:
-            return
         hook = getattr(loaded.plugin, "register", None)
         if callable(hook):
             try:
-                hook(self.api)
+                hook(self.api.bound(loaded.name))
             except Exception as e:  # noqa: BLE001 — ошибка регистрации не роняет запуск
                 loaded.error = str(e)
+
+    @staticmethod
+    def _unregister_capabilities(loaded: LoadedPlugin) -> None:
+        """Снять всё, что мод зарегистрировал (при выключении)."""
+        from ..effects import unregister_source
+
+        unregister_source(loaded.name)
 
     def get(self, name: str) -> LoadedPlugin | None:
         return next((p for p in self.plugins if p.name == name), None)
@@ -163,41 +173,52 @@ class PluginManager:
             loaded = _load_from_module(module, path=path)
         except Exception as e:  # noqa: BLE001
             loaded = LoadedPlugin(None, path.stem, path.name, "", error=str(e), path=path)
-        self._replace(loaded)
-        self._register_extensions(loaded)  # эффекты плагина — сразу в реестр
+        self._replace(loaded)  # возможности зарегистрируются при включении (apply)
         return loaded
 
     def _replace(self, loaded: LoadedPlugin) -> None:
         existing = self.get(loaded.name)
         if existing is not None:
             if existing.running:
-                self._stop(existing)
+                self._deactivate(existing)
             self.plugins = [p for p in self.plugins if p is not existing]
         self.plugins.append(loaded)
 
     def apply(self, plugins_cfg: dict) -> None:
-        """Привести плагины к конфигу: включённые запустить, выключенные остановить.
-
-        Изменившиеся настройки включённого плагина приводят к его перезапуску.
-        """
+        """Привести моды к конфигу. Включение регистрирует возможности и запускает
+        фоновую работу; выключение снимает регистрации и останавливает. Базовые
+        моды (base=True) включены по умолчанию. Смена настроек — перезапуск."""
         for loaded in self.plugins:
             if loaded.plugin is None:
                 continue
             cfg = dict(plugins_cfg.get(loaded.name, {}))
-            enabled = bool(cfg.get("enabled", False))
-            if loaded.running and (not enabled or cfg != loaded.settings):
+            enabled = bool(cfg.get("enabled", loaded.base))
+            if loaded.running and not enabled:
+                self._deactivate(loaded)
+            elif loaded.running and enabled and cfg != loaded.settings:
                 self._stop(loaded)
-            if enabled and not loaded.running:
-                self._start(loaded, cfg)
+                self._start(loaded, cfg)  # только перезапуск, регистрации не трогаем
+            elif enabled and not loaded.running:
+                self._activate(loaded, cfg)
 
     def stop_all(self) -> None:
         for loaded in self.plugins:
             if loaded.running:
-                self._stop(loaded)
+                self._deactivate(loaded)
+
+    def _activate(self, loaded: LoadedPlugin, settings: dict) -> None:
+        self._register_extensions(loaded)  # эффекты и т.п. — в реестры
+        self._start(loaded, settings)      # фоновая работа (если есть); running там
+
+    def _deactivate(self, loaded: LoadedPlugin) -> None:
+        self._stop(loaded)
+        self._unregister_capabilities(loaded)  # возможности уходят из реестров
+        loaded.running = False
 
     def _start(self, loaded: LoadedPlugin, settings: dict) -> None:
         try:
-            loaded.plugin.start(self.api, settings)
+            if hasattr(loaded.plugin, "start"):
+                loaded.plugin.start(self.api, settings)
             loaded.settings = settings
             loaded.running = True
             loaded.error = ""
@@ -206,7 +227,8 @@ class PluginManager:
 
     def _stop(self, loaded: LoadedPlugin) -> None:
         try:
-            loaded.plugin.stop()
+            if hasattr(loaded.plugin, "stop"):
+                loaded.plugin.stop()
         except Exception as e:  # noqa: BLE001
             loaded.error = str(e)
         loaded.running = False

@@ -141,7 +141,7 @@ class PluginManagerWindow(QDialog):
         self._locales = {loc.code: loc for loc in self.ctrl.installed_locales()}
         cfg = self.ctrl.plugins_cfg()
         for loaded in self.ctrl.manager.plugins:
-            enabled = bool(cfg.get(loaded.name, {}).get("enabled", False))
+            enabled = bool(cfg.get(loaded.name, {}).get("enabled", loaded.base))
             mark = "⚠" if loaded.error else ("●" if enabled else "○")
             item = QListWidgetItem(f"{mark}  {tr(loaded.title)}")
             item.setData(Qt.ItemDataRole.UserRole, ("plugin", loaded.name))
@@ -196,7 +196,7 @@ class PluginManagerWindow(QDialog):
             self.lbl_err.hide()
         entry = self.ctrl.plugins_cfg().get(loaded.name, {})
         self.ch_enabled.setEnabled(loaded.plugin is not None)
-        self.ch_enabled.setChecked(bool(entry.get("enabled", False)))
+        self.ch_enabled.setChecked(bool(entry.get("enabled", loaded.base)))
         self._build_settings(loaded, entry)
 
     def _show_locale(self, loc) -> None:
@@ -262,8 +262,22 @@ class PluginManagerWindow(QDialog):
     def _on_enabled_toggled(self, _checked: bool) -> None:
         if self._loading:
             return
-        self._apply_current()
         loaded = self._current_loaded()
+        # выключение базового мода — предупреждаем: часть функционала пропадёт
+        if loaded is not None and loaded.base and not _checked:
+            if QMessageBox.warning(
+                self, tr("Выключить базовый мод?"),
+                tr("«{title}» — базовый мод. Без него пропадёт часть функционала "
+                   "(эффекты/захват/транспорт). Выключить?").format(
+                    title=tr(loaded.title)),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            ) != QMessageBox.StandardButton.Yes:
+                self._loading = True  # откат галочки без повторного применения
+                self.ch_enabled.setChecked(True)
+                self._loading = False
+                return
+        self._apply_current()
         if loaded is not None:  # обновить значок ●/○ в списке
             item = self.list.currentItem()
             mark = "⚠" if loaded.error else ("●" if _checked else "○")

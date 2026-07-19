@@ -235,6 +235,32 @@ def test_catalog_install_accepts_locale(tmp_path):
     assert target.is_file()
 
 
+def test_effects_lamp_mod_activate_deactivate():
+    """Базовый мод «Эффекты лампы»: включён по умолчанию, выключение убирает эффекты."""
+    from adalight import effects
+    from adalight.plugins.builtin import effects_lamp
+    from adalight.plugins.manager import LoadedPlugin
+
+    effects.unregister_source("effects_lamp")  # старт с чистого реестра
+    assert effects.lamp_effect("fire") is None
+
+    manager = _empty_manager()
+    loaded = LoadedPlugin(
+        effects_lamp.create_plugin(), "effects_lamp", "Эффекты лампы", "", base=True
+    )
+    manager.plugins = [loaded]
+
+    manager.apply({})  # base=True → включён по умолчанию → активируется
+    assert loaded.running and effects.lamp_effect("fire") is not None
+
+    manager.apply({"effects_lamp": {"enabled": False}})  # выключаем
+    assert not loaded.running
+    assert effects.lamp_effect("fire") is None and effects.lamp_effect("solid") is None
+
+    manager.apply({})  # снова по умолчанию включён
+    assert effects.lamp_effect("starry") is not None
+
+
 def test_manager_calls_plugin_register_hook():
     """Плагин с register(api) добавляет эффект лампы при загрузке."""
     from adalight import effects

@@ -11,6 +11,8 @@ NAME = "English"
 
 TRANSLATIONS: dict[str, str] = {
     "Вспышки уведомлений": "Notification flashes",
+    "Эффекты лампы": "Lamp effects",
+    "Эффекты режима «Лампа»: цвет, градиент, радуги, дыхание, камин, комета, северное сияние, звёздное небо. Встроенный мод — выключение уберёт эффекты.": "Effects for the “Lamp” mode: color, gradient, rainbows, breathing, fireplace, comet, aurora, starry sky. A built-in mod — disabling it removes the effects.",
     "Уведомление из Telegram — голубая вспышка на ленте, из Discord — фиолетовая. Позиция и размер настраиваются. На Windows потребуется разрешить доступ к уведомлениям (Параметры → Конфиденциальность).": "A Telegram notification — a blue flash on the strip, Discord — purple. Position and size are configurable. On Windows you'll need to grant access to notifications (Settings → Privacy).",
     " · с ошибками: {n}": " · with errors: {n}",
     "(основной)": "(primary)",
@@ -305,6 +307,9 @@ TRANSLATIONS: dict[str, str] = {
     "Цветомузыка": "Music",
     "Целевой FPS:": "Target FPS:",
     "Что-то пошло не так.": "Something went wrong.",
+    "Выключить базовый мод?": "Disable a base mod?",
+    "«{title}» — базовый мод. Без него пропадёт часть функционала (эффекты/захват/транспорт). Выключить?": "“{title}” is a base mod. Without it some functionality is gone (effects/capture/transport). Disable?",
+    "Нет эффектов (включите мод «Эффекты лампы»)": "No effects (enable the “Lamp effects” mod)",
     "Что нового": "What's new",
     "Adalight обновлён до {v}": "Adalight updated to {v}",
     "Весь список изменений": "Full changelog",

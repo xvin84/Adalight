@@ -412,12 +412,13 @@ class MainWindow(QMainWindow):
         self._plugin_manager_window = None
 
         self._build_ui()
+        # включаем моды (регистрируют эффекты и т.п.) ДО наполнения UI из реестров
+        self.plugin_manager.apply(self.cfg.plugins)
         self._apply_cfg_to_ui(self.cfg)
         self._refresh_profiles()
         self._build_tray()
         self._loading = False
         self._refresh_preview_layout()
-        self.plugin_manager.apply(self.cfg.plugins)
 
         # восстановление геометрии окна и активной вкладки
         self._settings = QSettings("xvin84", "Adalight")
@@ -841,11 +842,18 @@ class MainWindow(QMainWindow):
         cur = self.cb_lamp_effect.currentData()
         self.cb_lamp_effect.blockSignals(True)
         self.cb_lamp_effect.clear()
-        for spec in lamp_effects():
-            self.cb_lamp_effect.addItem(tr(spec.label), spec.id)
-        if cur is not None:
-            idx = self.cb_lamp_effect.findData(cur)
-            self.cb_lamp_effect.setCurrentIndex(max(idx, 0))
+        specs = lamp_effects()
+        if not specs:
+            # мод «Эффекты лампы» выключен — мягкая деградация
+            self.cb_lamp_effect.addItem(tr("Нет эффектов (включите мод «Эффекты лампы»)"), None)
+            self.cb_lamp_effect.setEnabled(False)
+        else:
+            self.cb_lamp_effect.setEnabled(True)
+            for spec in specs:
+                self.cb_lamp_effect.addItem(tr(spec.label), spec.id)
+            if cur is not None:
+                idx = self.cb_lamp_effect.findData(cur)
+                self.cb_lamp_effect.setCurrentIndex(max(idx, 0))
         self.cb_lamp_effect.blockSignals(False)
 
     def _on_lamp_effect_changed(self, *args) -> None:
@@ -1466,7 +1474,8 @@ class MainWindow(QMainWindow):
     def _refresh_plugins_summary(self) -> None:
         plugins = self.plugin_manager.plugins
         enabled = sum(
-            1 for p in plugins if self._plugins_cfg.get(p.name, {}).get("enabled")
+            1 for p in plugins
+            if self._plugins_cfg.get(p.name, {}).get("enabled", p.base)
         )
         errors = sum(1 for p in plugins if p.error)
         text = tr("Плагинов: {total} · включено: {on}").format(
@@ -1508,6 +1517,7 @@ class MainWindow(QMainWindow):
             self._update_profile_dirty()
         self.plugin_manager.apply(self._plugins_cfg)
         self._refresh_plugins_summary()
+        self._fill_lamp_effects()  # мод мог добавить/убрать эффекты
 
     def flash_test(self, entry: dict) -> None:
         if self.thread is None or self._mode not in _MAIN_MODES:
@@ -2056,6 +2066,7 @@ class MainWindow(QMainWindow):
 
         self.cb_mode.setCurrentIndex(MODES.index(cfg.mode))
         self.mode_stack.setCurrentIndex(MODES.index(cfg.mode))
+        self._fill_lamp_effects()  # эффекты из реестра (моды уже включены)
         self.cb_lamp_effect.setCurrentIndex(
             max(self.cb_lamp_effect.findData(cfg.lamp_effect), 0)
         )

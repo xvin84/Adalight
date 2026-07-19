@@ -4,6 +4,14 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/);
 versions follow [SemVer](https://semver.org/). Full diffs are in the
 [GitHub releases](https://github.com/xvin84/Adalight/releases).
 
+## [0.16.0] — 2026-07-19
+
+- "Everything is a mod", stage 1: the "Lamp" mode effects became a built-in
+  "Lamp effects" mod — visible and manageable in the plugin manager.
+- Mods can be enabled and disabled; disabling actually removes the capability
+  (with a warning when disabling base mods).
+- Plugins add their own effects the same way the built-in ones do.
+
 ## [0.15.0] — 2026-07-19
 
 - Plugins can add their own lamp effects — they appear in the effect list next

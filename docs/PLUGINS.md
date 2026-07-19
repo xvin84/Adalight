@@ -145,8 +145,9 @@ class MyPlugin:
 ## Свои эффекты лампы
 
 Плагин может добавить эффект лампы — он появится в списке эффектов наравне со
-встроенными («всё есть мод»). Для этого объявите метод `register(api)` — он
-вызывается один раз при загрузке плагина:
+встроенными («всё есть мод»; сами встроенные эффекты — это тоже мод,
+`effects_lamp`). Объявите метод `register(api)` — он вызывается при **включении**
+мода, а при выключении Adalight сам снимет его эффекты:
 
 ```python
 import numpy as np
@@ -170,19 +171,14 @@ class MyEffectPlugin:
         # id, подпись, функция; wants_color/wants_speed — показывать ли контролы
         api.register_lamp_effect("my_effect", "Мой эффект", _my_effect, wants_speed=True)
 
-    def start(self, api, settings):
-        pass  # эффект работает и без включения — он часть набора эффектов
-
-    def stop(self):
-        pass
-
 
 def create_plugin():
     return MyEffectPlugin()
 ```
 
-Эффект доступен, пока плагин установлен (галочку «Включён» ему включать не
-нужно). Готовый пример — [`examples/plugins/plasma_effect.py`](../examples/plugins/plasma_effect.py).
+Эффект доступен, пока мод **включён** в менеджере плагинов; выключишь — эффект
+исчезнет из списка. `start`/`stop` для чисто-эффектного мода не нужны. Готовый
+пример — [`examples/plugins/plasma_effect.py`](../examples/plugins/plasma_effect.py).
 
 ## Локали (языки интерфейса)
 

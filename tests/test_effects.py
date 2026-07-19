@@ -259,7 +259,7 @@ def test_lamp_effect_registry_dispatch_and_meta():
 
     effects.register_lamp_effect("test_fx", "Тест", fake, wants_speed=True)
     spec = effects.lamp_effect("test_fx")
-    assert spec.label == "Тест" and spec.wants_speed and not spec.builtin
+    assert spec.label == "Тест" and spec.wants_speed and spec.source == ""
     out = effects.render_lamp(
         {"lamp_effect": "test_fx", "lamp_color": "#fff", "lamp_speed": 0.5}, 4, 1.0, None
     )
@@ -278,5 +278,5 @@ def test_render_lamp_unknown_falls_back_to_solid():
 def test_builtin_effects_registered():
     from adalight.effects import lamp_effects
 
-    ids = {s.id for s in lamp_effects() if s.builtin}
+    ids = {s.id for s in lamp_effects() if s.source == "effects_lamp"}
     assert {"solid", "gradient", "fire", "comet", "starry"} <= ids

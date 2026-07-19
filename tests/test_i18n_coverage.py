@@ -35,9 +35,9 @@ def _required_keys() -> set[str]:
     for d in (mw._CORNER_LABELS, mw._DIRECTION_LABELS, mw._MODE_LABELS,
               mw._MUSIC_EFFECT_LABELS, mw._THEME_LABELS):
         keys |= set(d.values())
-    # метки встроенных эффектов лампы — из реестра
-    from adalight.effects import lamp_effects
-    keys |= {spec.label for spec in lamp_effects() if spec.builtin}
+    # метки встроенных эффектов лампы — из мода «Эффекты лампы»
+    from adalight.plugins.builtin import effects_lamp
+    keys |= {label for _id, label, _r, _f in effects_lamp.LAMP_EFFECTS}
     keys |= set(PRESET_PROFILES)
     for _label, title, intro in mw._REPORT_TEMPLATES.values():
         keys |= {title, intro}
