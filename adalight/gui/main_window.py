@@ -83,7 +83,6 @@ from ..config import (
     BACKENDS,
     COLOR_ORDERS,
     DIRECTIONS,
-    LAMP_EFFECTS,
     MODES,
     MUSIC_EFFECTS,
     PRESET_PROFILES,
@@ -97,6 +96,8 @@ from ..config import (
     save_profile,
 )
 from ..device import list_serial_ports
+from ..effects import lamp_effect as _lamp_spec
+from ..effects import lamp_effects
 from ..engine import Engine, Mode
 from ..i18n import available_languages, register_language, set_language, tr
 from ..plugins import PluginAPI, PluginManager
@@ -116,17 +117,7 @@ _CORNER_LABELS = {
 _DIRECTION_LABELS = {"cw": "По часовой", "ccw": "Против часовой"}
 _MODE_LABELS = {"capture": "Захват экрана", "lamp": "Лампа", "music": "Цветомузыка"}
 _MODE_TO_ENGINE: dict[str, Mode] = {"capture": "live", "lamp": "lamp", "music": "music"}
-_LAMP_EFFECT_LABELS = {
-    "solid": "Сплошной цвет",
-    "gradient": "Градиент",
-    "rainbow": "Радуга (бегущая)",
-    "rainbow_static": "Радуга (статичная)",
-    "breathing": "Дыхание",
-    "fire": "Камин",
-    "comet": "Комета",
-    "aurora": "Северное сияние",
-    "starry": "Звёздное небо",
-}
+# метки эффектов лампы теперь в реестре effects.lamp_effects() («всё есть мод»)
 _MUSIC_EFFECT_LABELS = {
     "spectrum": "Спектр по периметру",
     "pulse": "Пульс от баса",
@@ -779,8 +770,7 @@ class MainWindow(QMainWindow):
         self._lamp_form = form
 
         self.cb_lamp_effect = QComboBox()
-        for value in LAMP_EFFECTS:
-            self.cb_lamp_effect.addItem(tr(_LAMP_EFFECT_LABELS[value]), value)
+        self._fill_lamp_effects()
         self.cb_lamp_effect.setToolTip(
             tr("Бегущая радуга вращается по периметру со скоростью «Скорость»,\n"
             "статичная — неподвижное распределение оттенков вдоль ленты.")
@@ -846,20 +836,31 @@ class MainWindow(QMainWindow):
         self._sync_music_rows()
         return g
 
+    def _fill_lamp_effects(self) -> None:
+        """Заполнить список эффектов из реестра (в т.ч. эффекты плагинов)."""
+        cur = self.cb_lamp_effect.currentData()
+        self.cb_lamp_effect.blockSignals(True)
+        self.cb_lamp_effect.clear()
+        for spec in lamp_effects():
+            self.cb_lamp_effect.addItem(tr(spec.label), spec.id)
+        if cur is not None:
+            idx = self.cb_lamp_effect.findData(cur)
+            self.cb_lamp_effect.setCurrentIndex(max(idx, 0))
+        self.cb_lamp_effect.blockSignals(False)
+
     def _on_lamp_effect_changed(self, *args) -> None:
         self._sync_lamp_rows()
         self._on_soft_changed()
 
     def _sync_lamp_rows(self) -> None:
-        effect = self.cb_lamp_effect.currentData()
+        spec = _lamp_spec(self.cb_lamp_effect.currentData())
         rows = {
-            self.btn_lamp_color: effect in ("solid", "breathing", "comet"),
-            self._lamp_speed_w: effect
-            in ("rainbow", "breathing", "fire", "comet", "aurora", "starry"),
-            self.gradient_editor: effect == "gradient",
-            self._fire_height_w: effect == "fire",
-            self._fire_intensity_w: effect == "fire",
-            self.sp_fire_sparks: effect == "fire",
+            self.btn_lamp_color: bool(spec and spec.wants_color),
+            self._lamp_speed_w: bool(spec and spec.wants_speed),
+            self.gradient_editor: bool(spec and spec.wants_gradient),
+            self._fire_height_w: bool(spec and spec.wants_fire),
+            self._fire_intensity_w: bool(spec and spec.wants_fire),
+            self.sp_fire_sparks: bool(spec and spec.wants_fire),
         }
         for widget, visible in rows.items():
             label = self._lamp_form.labelForField(widget)
@@ -1572,6 +1573,7 @@ class MainWindow(QMainWindow):
             self._plugins_cfg.setdefault(loaded.name, {})
             self.plugin_manager.apply(self._plugins_cfg)
             self._refresh_plugins_summary()
+            self._fill_lamp_effects()  # эффекты плагина сразу в списке эффектов
             self._toast(tr("«{title}» установлен").format(title=entry.title))
         return True
 
@@ -1972,9 +1974,9 @@ class MainWindow(QMainWindow):
             lambda: self._fill_tray_profiles(profiles_menu)
         )
         effects_menu = QMenu(tr("Эффекты"), menu)
-        for effect, label in _LAMP_EFFECT_LABELS.items():
+        for spec in lamp_effects():
             effects_menu.addAction(
-                tr(label), lambda e=effect: self._quick_lamp_effect(e)
+                tr(spec.label), lambda e=spec.id: self._quick_lamp_effect(e)
             )
         act_about = QAction(tr("О программе"), menu)
         act_about.triggered.connect(self._show_about)
@@ -2054,7 +2056,9 @@ class MainWindow(QMainWindow):
 
         self.cb_mode.setCurrentIndex(MODES.index(cfg.mode))
         self.mode_stack.setCurrentIndex(MODES.index(cfg.mode))
-        self.cb_lamp_effect.setCurrentIndex(LAMP_EFFECTS.index(cfg.lamp_effect))
+        self.cb_lamp_effect.setCurrentIndex(
+            max(self.cb_lamp_effect.findData(cfg.lamp_effect), 0)
+        )
         self._set_button_color(self.btn_lamp_color, cfg.lamp_color)
         self.gradient_editor.set_stops(cfg.lamp_gradient)
         self.sl_lamp_speed.setValue(round(cfg.lamp_speed * 100))
@@ -2491,7 +2495,7 @@ class MainWindow(QMainWindow):
         was_loading, self._loading = self._loading, True
         self.cb_mode.setCurrentIndex(MODES.index("lamp"))
         self.mode_stack.setCurrentIndex(MODES.index("lamp"))
-        self.cb_lamp_effect.setCurrentIndex(LAMP_EFFECTS.index(effect))
+        self.cb_lamp_effect.setCurrentIndex(max(self.cb_lamp_effect.findData(effect), 0))
         self._sync_lamp_rows()
         self._loading = was_loading
         self._start_engine("lamp")

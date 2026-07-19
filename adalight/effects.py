@@ -7,6 +7,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
+
 import numpy as np
 
 from .config import parse_hex_color
@@ -35,85 +38,155 @@ def hsv_strip(hues: np.ndarray, value: np.ndarray | float = 1.0) -> np.ndarray:
     return lut[i, np.arange(len(h))] * 255.0
 
 
-# ── лампа ────────────────────────────────────────────────────────────────
+# ── лампа: реестр эффектов («всё есть мод») ────────────────────────────────
+#
+# Встроенные эффекты регистрируются тем же вызовом register_lamp_effect(), что
+# доступен плагинам через PluginAPI.register_lamp_effect(). Функция эффекта —
+# (cfg_like, n, t, points) -> RGB (n, 3) 0..255. Флаги wants_* говорят GUI,
+# какие контролы показывать (цвет / градиент / скорость / настройки камина).
+
+LampRender = Callable[[dict, int, float, "list | None"], np.ndarray]
+
+
+@dataclass
+class LampEffectSpec:
+    id: str
+    label: str
+    render: LampRender
+    wants_color: bool = False
+    wants_gradient: bool = False
+    wants_speed: bool = False
+    wants_fire: bool = False
+    builtin: bool = False
+
+
+_LAMP_EFFECTS: dict[str, LampEffectSpec] = {}
+
+
+def register_lamp_effect(
+    effect_id: str,
+    label: str,
+    render: LampRender,
+    *,
+    wants_color: bool = False,
+    wants_gradient: bool = False,
+    wants_speed: bool = False,
+    wants_fire: bool = False,
+    builtin: bool = False,
+) -> None:
+    """Добавить эффект лампы в реестр (повторный id — перезапись)."""
+    _LAMP_EFFECTS[effect_id] = LampEffectSpec(
+        effect_id, label, render, wants_color, wants_gradient,
+        wants_speed, wants_fire, builtin,
+    )
+
+
+def lamp_effects() -> list[LampEffectSpec]:
+    return list(_LAMP_EFFECTS.values())
+
+
+def lamp_effect(effect_id: str) -> LampEffectSpec | None:
+    return _LAMP_EFFECTS.get(effect_id)
 
 
 def render_lamp(
     cfg_like: dict, n: int, t: float, points: list | None = None
 ) -> np.ndarray:
-    """Кадр лампы: effect/color/gradient/speed из dict'а (см. Engine), t — секунды.
+    """Кадр лампы: диспатч по реестру. points — раскладка диодов (side, x, y)."""
+    spec = _LAMP_EFFECTS.get(cfg_like["lamp_effect"]) or _LAMP_EFFECTS.get("solid")
+    if spec is None:
+        raise ValueError(f"Неизвестный эффект лампы: {cfg_like['lamp_effect']!r}")
+    return spec.render(cfg_like, n, t, points)
 
-    points — раскладка диодов (side, x, y) для эффектов, зависящих от геометрии.
-    """
-    effect = cfg_like["lamp_effect"]
-    color = np.array(parse_hex_color(cfg_like["lamp_color"]), dtype=np.float64)
-    speed = float(cfg_like["lamp_speed"])
 
-    if effect == "fire":
-        return render_fire(
-            n,
-            t,
-            speed,
-            points,
-            height=float(cfg_like.get("fire_height", 1.0)),
-            intensity=float(cfg_like.get("fire_intensity", 1.0)),
-            sparks=int(cfg_like.get("fire_sparks", 2)),
-        )
+def _lamp_color(cfg: dict) -> np.ndarray:
+    return np.array(parse_hex_color(cfg["lamp_color"]), dtype=np.float64)
 
-    if effect == "solid":
-        return np.tile(color, (n, 1))
 
-    if effect == "gradient":
-        stops = sorted(cfg_like["lamp_gradient"], key=lambda s: float(s["pos"]))
-        pos = np.array([float(s["pos"]) for s in stops])
-        cols = np.array([parse_hex_color(s["color"]) for s in stops], dtype=np.float64)
-        x = np.linspace(0.0, 1.0, max(n, 2))
-        return np.stack([np.interp(x, pos, cols[:, c]) for c in range(3)], axis=1)
+def _fx_solid(cfg, n, t, points):
+    return np.tile(_lamp_color(cfg), (n, 1))
 
-    if effect == "rainbow":
-        # бегущая радуга: оттенки вдоль ленты вращаются по периметру
-        hues = np.arange(n) / max(n, 1) + t * speed * 0.2
-        return hsv_strip(hues)
 
-    if effect == "rainbow_static":
-        # статичная радуга: неподвижное распределение оттенков вдоль ленты
-        return hsv_strip(np.arange(n) / max(n, 1))
+def _fx_gradient(cfg, n, t, points):
+    stops = sorted(cfg["lamp_gradient"], key=lambda s: float(s["pos"]))
+    pos = np.array([float(s["pos"]) for s in stops])
+    cols = np.array([parse_hex_color(s["color"]) for s in stops], dtype=np.float64)
+    x = np.linspace(0.0, 1.0, max(n, 2))
+    return np.stack([np.interp(x, pos, cols[:, c]) for c in range(3)], axis=1)
 
-    if effect == "breathing":
-        # плавное «дыхание» 0.12..1.0; speed=1 -> цикл ~2 с, speed→0 -> очень медленно
-        phase = np.sin(2.0 * np.pi * t * (0.05 + speed * 0.45))
-        factor = 0.12 + 0.88 * (0.5 + 0.5 * phase)
-        return np.tile(color * factor, (n, 1))
 
-    if effect == "comet":
-        # комета выбранного цвета бежит по периметру, за ней тает хвост
-        head = (t * (0.05 + speed * 0.6)) % 1.0
-        behind = (head - np.arange(n) / max(n, 1)) % 1.0  # доля круга позади головы
-        tail = np.exp(-behind * 16.0)
-        return color * tail[:, None]
+def _fx_rainbow(cfg, n, t, points):
+    # бегущая радуга: оттенки вдоль ленты вращаются по периметру
+    hues = np.arange(n) / max(n, 1) + t * float(cfg["lamp_speed"]) * 0.2
+    return hsv_strip(hues)
 
-    if effect == "aurora":
-        # северное сияние: две медленные волны, оттенки зелёный <-> фиолетовый
-        tt = t * (0.15 + speed * 0.85)
-        pos = np.arange(n) / max(n, 1)
-        w1 = np.sin(2.0 * np.pi * pos * 1.5 + tt * 0.9)
-        w2 = np.sin(2.0 * np.pi * pos * 2.3 - tt * 0.6 + 1.7)
-        hues = 0.55 + 0.23 * w1  # ~0.32 (зелёный) .. ~0.78 (фиолетовый)
-        value = 0.35 + 0.55 * (0.5 + 0.5 * w2)
-        return hsv_strip(hues, value)
 
-    if effect == "starry":
-        # звёздное небо: тёмная синева, звёзды мерцают каждая в своём ритме
-        idx = np.arange(n)
-        phases = (idx * 12.9898) % (2.0 * np.pi)
-        freqs = 0.25 + (idx * 7.233) % 1.0  # 0.25..1.25 Гц у каждой звезды
-        tw = np.sin(2.0 * np.pi * freqs * t * (0.25 + speed * 0.75) + phases)
-        star = np.clip(tw, 0.0, 1.0) ** 6  # редкие острые вспышки
-        sky = np.array([6.0, 10.0, 36.0])
-        starlight = np.array([255.0, 240.0, 200.0])
-        return sky + star[:, None] * (starlight - sky)
+def _fx_rainbow_static(cfg, n, t, points):
+    # статичная радуга: неподвижное распределение оттенков вдоль ленты
+    return hsv_strip(np.arange(n) / max(n, 1))
 
-    raise ValueError(f"Неизвестный эффект лампы: {effect!r}")
+
+def _fx_breathing(cfg, n, t, points):
+    # плавное «дыхание» 0.12..1.0; speed=1 -> цикл ~2 с, speed→0 -> очень медленно
+    phase = np.sin(2.0 * np.pi * t * (0.05 + float(cfg["lamp_speed"]) * 0.45))
+    factor = 0.12 + 0.88 * (0.5 + 0.5 * phase)
+    return np.tile(_lamp_color(cfg) * factor, (n, 1))
+
+
+def _fx_comet(cfg, n, t, points):
+    # комета выбранного цвета бежит по периметру, за ней тает хвост
+    head = (t * (0.05 + float(cfg["lamp_speed"]) * 0.6)) % 1.0
+    behind = (head - np.arange(n) / max(n, 1)) % 1.0  # доля круга позади головы
+    tail = np.exp(-behind * 16.0)
+    return _lamp_color(cfg) * tail[:, None]
+
+
+def _fx_aurora(cfg, n, t, points):
+    # северное сияние: две медленные волны, оттенки зелёный <-> фиолетовый
+    tt = t * (0.15 + float(cfg["lamp_speed"]) * 0.85)
+    pos = np.arange(n) / max(n, 1)
+    w1 = np.sin(2.0 * np.pi * pos * 1.5 + tt * 0.9)
+    w2 = np.sin(2.0 * np.pi * pos * 2.3 - tt * 0.6 + 1.7)
+    hues = 0.55 + 0.23 * w1  # ~0.32 (зелёный) .. ~0.78 (фиолетовый)
+    value = 0.35 + 0.55 * (0.5 + 0.5 * w2)
+    return hsv_strip(hues, value)
+
+
+def _fx_starry(cfg, n, t, points):
+    # звёздное небо: тёмная синева, звёзды мерцают каждая в своём ритме
+    idx = np.arange(n)
+    phases = (idx * 12.9898) % (2.0 * np.pi)
+    freqs = 0.25 + (idx * 7.233) % 1.0  # 0.25..1.25 Гц у каждой звезды
+    tw = np.sin(2.0 * np.pi * freqs * t * (0.25 + float(cfg["lamp_speed"]) * 0.75) + phases)
+    star = np.clip(tw, 0.0, 1.0) ** 6  # редкие острые вспышки
+    sky = np.array([6.0, 10.0, 36.0])
+    starlight = np.array([255.0, 240.0, 200.0])
+    return sky + star[:, None] * (starlight - sky)
+
+
+def _fx_fire(cfg, n, t, points):
+    return render_fire(
+        n, t, float(cfg["lamp_speed"]), points,
+        height=float(cfg.get("fire_height", 1.0)),
+        intensity=float(cfg.get("fire_intensity", 1.0)),
+        sparks=int(cfg.get("fire_sparks", 2)),
+    )
+
+
+def _register_builtin_lamp_effects() -> None:
+    reg = lambda *a, **k: register_lamp_effect(*a, builtin=True, **k)  # noqa: E731
+    reg("solid", "Сплошной цвет", _fx_solid, wants_color=True)
+    reg("gradient", "Градиент", _fx_gradient, wants_gradient=True)
+    reg("rainbow", "Радуга (бегущая)", _fx_rainbow, wants_speed=True)
+    reg("rainbow_static", "Радуга (статичная)", _fx_rainbow_static)
+    reg("breathing", "Дыхание", _fx_breathing, wants_color=True, wants_speed=True)
+    reg("fire", "Камин", _fx_fire, wants_speed=True, wants_fire=True)
+    reg("comet", "Комета", _fx_comet, wants_color=True, wants_speed=True)
+    reg("aurora", "Северное сияние", _fx_aurora, wants_speed=True)
+    reg("starry", "Звёздное небо", _fx_starry, wants_speed=True)
+
+
+_register_builtin_lamp_effects()
 
 
 def render_fire(

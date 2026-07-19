@@ -120,6 +120,23 @@ class PluginManager:
     def __init__(self, api: PluginAPI):
         self.api = api
         self.plugins: list[LoadedPlugin] = discover()
+        for loaded in self.plugins:
+            self._register_extensions(loaded)
+
+    def _register_extensions(self, loaded: LoadedPlugin) -> None:
+        """Дать плагину зарегистрировать расширения (эффекты и т.п.) при загрузке.
+
+        Необязательный метод plugin.register(api) вызывается один раз — так
+        эффект плагина появляется в списке, пока плагин установлен.
+        """
+        if loaded.plugin is None:
+            return
+        hook = getattr(loaded.plugin, "register", None)
+        if callable(hook):
+            try:
+                hook(self.api)
+            except Exception as e:  # noqa: BLE001 — ошибка регистрации не роняет запуск
+                loaded.error = str(e)
 
     def get(self, name: str) -> LoadedPlugin | None:
         return next((p for p in self.plugins if p.name == name), None)
@@ -147,6 +164,7 @@ class PluginManager:
         except Exception as e:  # noqa: BLE001
             loaded = LoadedPlugin(None, path.stem, path.name, "", error=str(e), path=path)
         self._replace(loaded)
+        self._register_extensions(loaded)  # эффекты плагина — сразу в реестр
         return loaded
 
     def _replace(self, loaded: LoadedPlugin) -> None:

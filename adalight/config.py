@@ -195,7 +195,9 @@ class Config:
             raise ValueError("Порог теней должен быть в диапазоне 0..0.5")
         if self.mode not in MODES:
             raise ValueError(f"Неверный режим: {self.mode!r}")
-        if self.lamp_effect not in LAMP_EFFECTS:
+        from .effects import lamp_effect  # эффекты (в т.ч. от плагинов) — из реестра
+
+        if lamp_effect(self.lamp_effect) is None:
             raise ValueError(f"Неверный эффект лампы: {self.lamp_effect!r}")
         if self.music_effect not in MUSIC_EFFECTS:
             raise ValueError(f"Неверный эффект цветомузыки: {self.music_effect!r}")

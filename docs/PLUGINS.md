@@ -142,6 +142,48 @@ class MyPlugin:
 
 `kind: official` зарезервирован за плагинами из этого репозитория.
 
+## Свои эффекты лампы
+
+Плагин может добавить эффект лампы — он появится в списке эффектов наравне со
+встроенными («всё есть мод»). Для этого объявите метод `register(api)` — он
+вызывается один раз при загрузке плагина:
+
+```python
+import numpy as np
+
+
+def _my_effect(cfg_like, n, t, points):
+    # cfg_like — настройки лампы (lamp_color/lamp_speed/…), n — число диодов,
+    # t — секунды, points — раскладка (side, x, y); вернуть RGB (n, 3) в 0..255
+    speed = float(cfg_like.get("lamp_speed", 0.5))
+    x = np.linspace(0.0, 1.0, n)
+    v = 0.5 + 0.5 * np.sin(2 * np.pi * (x + t * speed))
+    return np.stack([v, v * 0.4, 1 - v], axis=1) * 255.0
+
+
+class MyEffectPlugin:
+    name = "my_effect"
+    title = "Мой эффект"
+    description = "Что он делает"
+
+    def register(self, api):
+        # id, подпись, функция; wants_color/wants_speed — показывать ли контролы
+        api.register_lamp_effect("my_effect", "Мой эффект", _my_effect, wants_speed=True)
+
+    def start(self, api, settings):
+        pass  # эффект работает и без включения — он часть набора эффектов
+
+    def stop(self):
+        pass
+
+
+def create_plugin():
+    return MyEffectPlugin()
+```
+
+Эффект доступен, пока плагин установлен (галочку «Включён» ему включать не
+нужно). Готовый пример — [`examples/plugins/plasma_effect.py`](../examples/plugins/plasma_effect.py).
+
 ## Локали (языки интерфейса)
 
 Язык — это тоже плагин. Файл кладётся в ту же папку плагинов, но вместо

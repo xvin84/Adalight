@@ -49,6 +49,29 @@ class PluginAPI:
         """
         self._flash(color, x, y, radius, duration, style)
 
+    def register_lamp_effect(
+        self,
+        effect_id: str,
+        label: str,
+        render,
+        *,
+        wants_color: bool = False,
+        wants_speed: bool = False,
+    ) -> None:
+        """Добавить свой эффект лампы — он появится в списке эффектов наравне со
+        встроенными («всё есть мод»).
+
+        render(cfg_like, n, t, points) -> RGB-массив (n, 3) в 0..255: cfg_like —
+        словарь настроек лампы (lamp_color/lamp_speed/…), n — число диодов,
+        t — секунды, points — раскладка (side, x, y). wants_color/wants_speed
+        подсказывают GUI, показывать ли контролы цвета и скорости.
+        """
+        from ..effects import register_lamp_effect
+
+        register_lamp_effect(
+            effect_id, label, render, wants_color=wants_color, wants_speed=wants_speed
+        )
+
     def notify(self, title: str, text: str) -> None:
         """Системное уведомление из трея (уважает настройку «Уведомления в трее»)."""
         self._notify(title, text)

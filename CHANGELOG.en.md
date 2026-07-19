@@ -4,6 +4,15 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/);
 versions follow [SemVer](https://semver.org/). Full diffs are in the
 [GitHub releases](https://github.com/xvin84/Adalight/releases).
 
+## [0.15.0] — 2026-07-19
+
+- Plugins can add their own lamp effects — they appear in the effect list next
+  to the built-in ones ("everything is a mod"); example —
+  examples/plugins/plasma_effect.py.
+- Built-in lamp effects moved to a shared effect registry.
+- The "What's new" dialog, when updating from a version before it existed, now
+  shows the full history up to the current version instead of only the current one.
+
 ## [0.14.0] — 2026-07-19
 
 - "What's new" dialog after an update: the list of changes (across several

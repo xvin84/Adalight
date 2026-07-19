@@ -246,3 +246,37 @@ def test_music_output_bounds():
     out = r.render(np.random.default_rng(0).normal(0, 1, 1024), 48000)
     assert out.shape == (16, 3)
     assert out.min() >= 0.0 and out.max() <= 255.0
+
+
+def test_lamp_effect_registry_dispatch_and_meta():
+    from adalight import effects
+
+    seen = {}
+
+    def fake(cfg, n, t, points):
+        seen["args"] = (n, t)
+        return np.zeros((n, 3))
+
+    effects.register_lamp_effect("test_fx", "Тест", fake, wants_speed=True)
+    spec = effects.lamp_effect("test_fx")
+    assert spec.label == "Тест" and spec.wants_speed and not spec.builtin
+    out = effects.render_lamp(
+        {"lamp_effect": "test_fx", "lamp_color": "#fff", "lamp_speed": 0.5}, 4, 1.0, None
+    )
+    assert out.shape == (4, 3) and seen["args"] == (4, 1.0)
+
+
+def test_render_lamp_unknown_falls_back_to_solid():
+    from adalight import effects
+
+    out = effects.render_lamp(
+        {"lamp_effect": "nope", "lamp_color": "#ff0000", "lamp_speed": 0.5}, 3, 0.0, None
+    )
+    assert out.shape == (3, 3) and (out[:, 0] > 200).all()  # красный solid
+
+
+def test_builtin_effects_registered():
+    from adalight.effects import lamp_effects
+
+    ids = {s.id for s in lamp_effects() if s.builtin}
+    assert {"solid", "gradient", "fire", "comet", "starry"} <= ids

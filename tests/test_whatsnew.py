@@ -44,10 +44,11 @@ def test_notes_between_excludes_non_semver():
     assert "0.9.x" not in [v for v, _ in picked]  # мусорную версию не берём
 
 
-def test_update_notes_empty_last_shows_only_current():
+def test_update_notes_empty_last_shows_all_history():
     md = update_notes("", "0.14.0", text=SAMPLE)
-    assert "## 0.14.0" in md and "фича A" in md
-    assert "0.13.0" not in md  # без маркера — только текущая версия
+    # без маркера прошлую версию не знаем → показываем всю историю до current
+    assert "## 0.14.0" in md and "## 0.13.0" in md and "## 0.12.0" in md
+    assert "0.9.x" not in md  # несемвер по-прежнему исключён
 
 
 def test_update_notes_multi_version():

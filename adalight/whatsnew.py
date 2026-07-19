@@ -97,8 +97,9 @@ def update_notes(
     """Готовый markdown изменений для окна «Что нового» ('' — показывать нечего).
 
     Берётся changelog на языке lang (откат на русский, если для языка его нет).
-    last пусто (обновление с версии до появления маркера) → только текущая
-    секция: прошлую версию мы не знаем и не сваливаем всю историю.
+    last пусто (обновление с версии до появления маркера, прошлую версию мы не
+    знаем) → показываем всю историю до current, чтобы прыжок через версии не
+    съедал изменения.
     """
     if text is None:
         files = changelog_files()
@@ -106,9 +107,4 @@ def update_notes(
         if path is None:
             return ""
         text = Path(path).read_text(encoding="utf-8")
-    entries = parse_changelog(text)
-    if not last:
-        picked = [(ver, body) for ver, body in entries if ver == current]
-    else:
-        picked = notes_between(entries, last, current)
-    return to_markdown(picked)
+    return to_markdown(notes_between(parse_changelog(text), last, current))

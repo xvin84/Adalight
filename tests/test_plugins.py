@@ -235,6 +235,51 @@ def test_catalog_install_accepts_locale(tmp_path):
     assert target.is_file()
 
 
+def test_manager_calls_plugin_register_hook():
+    """Плагин с register(api) добавляет эффект лампы при загрузке."""
+    from adalight import effects
+    from adalight.plugins.manager import LoadedPlugin
+
+    class FxPlugin:
+        name = "fx_reg"
+        title = "Fx"
+        description = "d"
+
+        def register(self, api):
+            api.register_lamp_effect("fx_reg_effect", "Мой", lambda c, n, t, p: 0)
+
+        def start(self, api, s):
+            pass
+
+        def stop(self):
+            pass
+
+    manager = _empty_manager()
+    manager._register_extensions(LoadedPlugin(FxPlugin(), "fx_reg", "Fx", "d"))
+    assert effects.lamp_effect("fx_reg_effect") is not None
+
+
+def test_example_plasma_plugin_registers_effect():
+    import importlib.util
+    from pathlib import Path
+
+    from adalight import effects
+
+    path = (
+        Path(__file__).resolve().parent.parent
+        / "examples" / "plugins" / "plasma_effect.py"
+    )
+    spec = importlib.util.spec_from_file_location("example_plasma", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    plugin = module.create_plugin()
+    plugin.register(make_api())
+    fx = effects.lamp_effect("plasma")
+    assert fx is not None and fx.wants_speed
+    out = fx.render({"lamp_speed": 0.5}, 8, 1.0, None)
+    assert out.shape == (8, 3) and 0.0 <= out.min() and out.max() <= 255.0
+
+
 def test_builtin_english_uses_locale_contract():
     from adalight.locales import builtin_locales, en
 
