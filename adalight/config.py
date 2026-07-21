@@ -154,6 +154,7 @@ class Config:
     preview_zones: bool = True   # показывать зоны сбора цвета
     notifications: bool = True   # системные уведомления из трея
     auto_update: bool = False    # при запуске тихо скачать и установить обновление
+    show_all_ports: bool = False # в списке порта показывать все serial-порты, а не только платы
 
     @property
     def total_leds(self) -> int:

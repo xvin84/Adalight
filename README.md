@@ -2,6 +2,9 @@
 
 **English** | [Русский](README.ru.md)
 
+> ⚠️ **Beta.** Adalight is pre-1.0 — a few rough edges are expected. Please
+> report bugs and ideas in the [issues](https://github.com/xvin84/Adalight/issues).
+
 Screen-edge ambient lighting (ambilight) for an LED strip behind your monitor:
 the app captures the screen, averages the colors along the edges and streams
 them to an Arduino/ESP over the classic **Adalight** serial protocol.
@@ -17,6 +20,10 @@ layout, and a tray icon so the lighting keeps running with the window closed.
 
 ## Features
 
+- **Smart port picker**: by default the list shows only boards (Arduino/ESP) and
+  USB devices, with friendly labels ("COM5 — Arduino Uno") — noisy system ports
+  (ttyS*) are hidden. Recognition is by USB descriptor (VID/PID), like Arduino
+  IDE's "Get Board Info"; a "Show all ports" checkbox reveals the rest.
 - Serial port with autodetection, baud rate, **channel order** (RGB/GRB/BGR/…) —
   WS2812 strips usually expect GRB.
 - LED counts per side, start corner, strip direction (cw/ccw), X/Y mirroring.
@@ -105,6 +112,14 @@ no Python required:
 - **Windows**: `Adalight-Setup.exe` (installer, recommended) or portable `Adalight.exe`
 - **Linux**: `Adalight-linux-x86_64` (then `chmod +x Adalight-linux-x86_64`;
   Wayland capture additionally needs `wf-recorder` installed)
+
+## Firmware
+
+Your board (Arduino/ESP) needs an Adalight-compatible sketch. A ready-to-flash
+reference sketch is in [`firmware/`](firmware/) — original author **AlexGyver**
+(<https://alexgyver.ru/arduino_ambilight/>), included **with attribution** and
+only lightly adapted. See [firmware/README.md](firmware/README.md) for flashing
+and how the sketch settings map to the app.
 
 ## Run from source
 

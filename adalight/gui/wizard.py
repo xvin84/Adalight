@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import DIRECTIONS, START_CORNERS
-from ..device import list_serial_ports
+from ..device import scan_serial_ports
 from ..i18n import tr
 
 if TYPE_CHECKING:
@@ -160,16 +160,31 @@ class SetupWizard(QWizard):
 
     # ── действия ──────────────────────────────────────────────────────────
 
+    def _current_port(self) -> str:
+        idx = self.cb_port.currentIndex()
+        data = self.cb_port.itemData(idx)
+        if data and self.cb_port.itemText(idx) == self.cb_port.currentText():
+            return str(data)
+        return self.cb_port.currentText().strip()
+
     def _refresh_ports(self) -> None:
-        current = self.cb_port.currentText()
+        current = self._current_port()
         self.cb_port.clear()
-        self.cb_port.addItems([device for device, _ in list_serial_ports()])
+        ports = scan_serial_ports()
+        shown = [p for p in ports if p.is_usb] or ports  # только USB; иначе — все
+        for p in shown:
+            self.cb_port.addItem(p.label, p.device)
         if current:
-            self.cb_port.setCurrentText(current)
+            for i in range(self.cb_port.count()):
+                if self.cb_port.itemData(i) == current:
+                    self.cb_port.setCurrentIndex(i)
+                    break
+            else:
+                self.cb_port.setCurrentText(current)
 
     def _push_to_main(self) -> None:
         mw = self._mw
-        mw.cb_port.setCurrentText(self.cb_port.currentText().strip())
+        mw._select_port(self._current_port())
         mw.cb_baud.setCurrentText(self.cb_baud.currentText())
         mw.sp_top.setValue(self.sp_top.value())
         mw.sp_right.setValue(self.sp_right.value())

@@ -77,7 +77,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import __version__, autostart, events, updates, whatsnew
+from .. import __stage__, __version__, autostart, events, updates, whatsnew
 from ..capture import capture_sources, list_outputs
 from ..config import (
     COLOR_ORDERS,
@@ -93,7 +93,7 @@ from ..config import (
     load_profile,
     save_profile,
 )
-from ..device import list_serial_ports
+from ..device import scan_serial_ports
 from ..effects import lamp_effect as _lamp_spec
 from ..effects import lamp_effects, music_effects
 from ..effects import music_effect as _music_spec
@@ -165,7 +165,8 @@ _BTN_UPDATE_QSS = (
 
 def _about_html() -> str:
     return (
-        f"<h3>Adalight {__version__}</h3>"
+        f"<h3>Adalight {__version__} · {__stage__}</h3>"
+        f"<p><i>{tr('Бета-версия — возможны ошибки, пишите о них в issues.')}</i></p>"
         f"<p>{tr('Фоновая подсветка (ambilight) для LED-ленты: захват экрана, '
               'лампа и цветомузыка. Windows и Linux/Wayland.')}</p>"
         f"<p>{tr('Протокол: Adalight (Arduino/ESP по serial).')}</p>"
@@ -360,7 +361,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"Adalight {__version__}")
+        self.setWindowTitle(f"Adalight {__version__} · {__stage__}")
         self.setWindowIcon(app_icon())
 
         self.cfg = Config.load()
@@ -964,6 +965,14 @@ class MainWindow(QMainWindow):
         self._port_row_w = self._wrap_row(row)
         form.addRow(tr("Порт:"), self._port_row_w)
 
+        self.chk_all_ports = QCheckBox(tr("Показать все порты"))
+        self.chk_all_ports.setToolTip(
+            tr("По умолчанию показаны только платы (Arduino/ESP) и USB-устройства.\n"
+            "Включите, если вашего порта нет в списке.")
+        )
+        self.chk_all_ports.toggled.connect(self._on_show_all_ports)
+        form.addRow(self.chk_all_ports)
+
         self.ed_wled_host = QLineEdit()
         self.ed_wled_host.setPlaceholderText(tr("например, 192.168.1.42 или wled.local"))
         self.ed_wled_host.textChanged.connect(self._on_hard_changed)
@@ -1027,6 +1036,7 @@ class MainWindow(QMainWindow):
         needs_network = bool(spec and spec.needs_network)
         rows = {
             self._port_row_w: needs_serial,
+            self.chk_all_ports: needs_serial,
             self.cb_baud: needs_serial,
             self.cb_order: needs_serial,
             self.ed_wled_host: needs_network,
@@ -2103,12 +2113,13 @@ class MainWindow(QMainWindow):
     # ── связь Config <-> UI ───────────────────────────────────────────────
 
     def _apply_cfg_to_ui(self, cfg: Config) -> None:
+        self.chk_all_ports.setChecked(cfg.show_all_ports)  # до _refresh_ports: влияет на фильтр
         self._refresh_ports()
         self._fill_transports()  # транспорты из реестра (мод «Транспорты»)
         idx = self.cb_transport.findData(cfg.transport)
         if idx >= 0:
             self.cb_transport.setCurrentIndex(idx)
-        self.cb_port.setCurrentText(cfg.port)
+        self._select_port(cfg.port)
         self.cb_baud.setCurrentText(str(cfg.baud))
         self.cb_order.setCurrentText(cfg.color_order)
         self.ed_wled_host.setText(cfg.wled_host)
@@ -2205,7 +2216,8 @@ class MainWindow(QMainWindow):
             wled_host=self.ed_wled_host.text().strip(),
             wled_port=self.sp_wled_port.value(),
             plugins=self._plugins_cfg_from_ui(),
-            port=self.cb_port.currentText().strip(),
+            port=self._current_port(),
+            show_all_ports=self.chk_all_ports.isChecked(),
             baud=int(self.cb_baud.currentText() or 115200),
             color_order=self.cb_order.currentText(),
             output=self._current_output(),
@@ -2265,16 +2277,45 @@ class MainWindow(QMainWindow):
             return data
         return self.cb_output.currentText().strip()
 
+    def _current_port(self) -> str:
+        idx = self.cb_port.currentIndex()
+        data = self.cb_port.itemData(idx)
+        # выбран элемент из списка (текст == его ярлык) → реальное устройство из данных;
+        # иначе пользователь вписал порт руками — берём текст
+        if data and self.cb_port.itemText(idx) == self.cb_port.currentText():
+            return str(data)
+        return self.cb_port.currentText().strip()
+
+    def _select_port(self, port: str) -> None:
+        if not port:
+            return
+        for i in range(self.cb_port.count()):
+            if self.cb_port.itemData(i) == port:
+                self.cb_port.setCurrentIndex(i)
+                return
+        self.cb_port.setCurrentText(port)
+
+    def _on_show_all_ports(self, _checked: bool = False) -> None:
+        self._refresh_ports()
+        self._on_hard_changed()  # запомнить галочку (при загрузке подавлено _loading)
+
     def _refresh_ports(self) -> None:
         was_loading, self._loading = self._loading, True
-        current = self.cb_port.currentText()
+        current = self._current_port()
         self.cb_port.clear()
-        for device, desc in list_serial_ports():
-            label = f"{device} — {desc}" if desc else device
-            self.cb_port.addItem(device)
-            self.cb_port.setItemData(self.cb_port.count() - 1, label, Qt.ItemDataRole.ToolTipRole)
-        if current:
-            self.cb_port.setCurrentText(current)
+        ports = scan_serial_ports()
+        show_all = self.chk_all_ports.isChecked()
+        shown = [p for p in ports if show_all or p.is_usb]
+        # умный фильтр не оставил ничего — не прячем последнюю дверь, показываем всё
+        if not shown:
+            shown = ports
+        for p in shown:
+            self.cb_port.addItem(p.label, p.device)
+            if p.label != p.device:
+                self.cb_port.setItemData(
+                    self.cb_port.count() - 1, p.label, Qt.ItemDataRole.ToolTipRole
+                )
+        self._select_port(current)
         self._loading = was_loading
 
     def _refresh_outputs(self) -> None:

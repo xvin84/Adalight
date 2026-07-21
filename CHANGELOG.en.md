@@ -4,6 +4,19 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/);
 versions follow [SemVer](https://semver.org/). Full diffs are in the
 [GitHub releases](https://github.com/xvin84/Adalight/releases).
 
+## [0.22.0] — 2026-07-21
+
+- Smart port picker: by default the list shows only boards (Arduino/ESP) and USB
+  devices — with friendly labels ("COM5 — Arduino Uno"); noisy system ports
+  (ttyS*) are hidden. Recognition is by the USB descriptor (VID/PID), like "Get
+  Board Info" in the Arduino IDE — the board is never opened or probed.
+- A "Show all ports" checkbox — for a board with an exotic chip that isn't listed.
+- Beta marker in the window title and the About dialog.
+- Board firmware added to the repo (firmware/) — a reference Adalight sketch by
+  AlexGyver (alexgyver.ru/arduino_ambilight), included with attribution.
+- Richer GitHub release notes: what's new, a description and the features,
+  English first, then Russian.
+
 ## [0.21.0] — 2026-07-19
 
 - "Everything is a mod", stage 5 (migration complete): an event bus. Mods and

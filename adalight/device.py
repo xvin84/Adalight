@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -153,8 +154,81 @@ class AdalightDevice:
         self.send_raw(np.zeros((self.cfg.total_leds, 3), dtype=np.uint8))
 
 
-def list_serial_ports() -> list[tuple[str, str]]:
-    """Доступные serial-порты: (устройство, описание)."""
+# Производители плат и USB-serial мостов, по которым узнаём Arduino/ESP.
+# CH340/CP210x/FTDI — универсальные мосты: стоят и на клонах Arduino/ESP,
+# и на обычных переходниках, поэтому это «вероятно плата», а не гарантия.
+# Полный список портов всегда доступен по галочке «Показать все порты».
+_BOARD_VENDORS: dict[int, str] = {
+    0x2341: "Arduino",
+    0x2A03: "Arduino",           # arduino.org / Genuino
+    0x303A: "ESP32 (Espressif)",  # ESP32-S2/S3/C3 с родным USB
+    0x1A86: "CH340",             # QinHeng — клоны, NodeMCU, ESP-платы
+    0x10C4: "CP210x",            # Silicon Labs — девкиты ESP32/ESP8266
+    0x0403: "FTDI",              # переходник FT232 — Nano-клоны
+    0x2E8A: "Raspberry Pi Pico",
+    0x239A: "Adafruit",
+    0x16C0: "Teensy",            # общий VID Teensyduino / старых плат
+}
+# У этих производителей USB «родной» — строка продукта обычно и есть имя платы
+# («Arduino Uno»); у мостов (CH340/CP210x/FTDI) продукт неинформативен.
+_NATIVE_USB_VENDORS = frozenset({0x2341, 0x2A03, 0x303A, 0x239A, 0x2E8A})
+
+
+@dataclass(frozen=True)
+class PortInfo:
+    """Serial-порт с распознаванием платы по USB-дескриптору."""
+
+    device: str        # "/dev/ttyUSB0" или "COM5" — то, что уходит в cfg.port
+    description: str    # сырое описание из pyserial
+    vid: int | None
+    pid: int | None
+    is_usb: bool        # есть USB vid → это USB-устройство, а не ttyS* материнки
+    is_board: bool      # узнан как Arduino/ESP/USB-serial мост
+    name: str           # человеческое имя платы/чипа ("Arduino Uno", "CH340"), "" если нет
+    label: str          # готовая строка для показа: "COM5 — Arduino Uno"
+
+
+def scan_serial_ports() -> list[PortInfo]:
+    """Все serial-порты с распознаванием плат; узнанные и USB — первыми.
+
+    Ничего не отправляет в порт и не открывает его — читает только USB-дескриптор
+    (VID/PID/product), ровно как «Get Board Info» в Arduino IDE.
+    """
     from serial.tools import list_ports
 
-    return [(p.device, p.description or "") for p in list_ports.comports()]
+    ports: list[PortInfo] = []
+    for p in list_ports.comports():
+        vid, pid = p.vid, p.pid
+        vendor = _BOARD_VENDORS.get(vid or -1, "")
+        product = (p.product or "").strip()
+        if vid in _NATIVE_USB_VENDORS and product:
+            name = product
+        else:
+            name = vendor
+        desc = p.description or ""
+        if name:
+            label = f"{p.device} — {name}"
+        elif desc and desc != "n/a":
+            label = f"{p.device} — {desc}"
+        else:
+            label = p.device
+        ports.append(
+            PortInfo(
+                device=p.device,
+                description=desc,
+                vid=vid,
+                pid=pid,
+                is_usb=vid is not None,
+                is_board=bool(vendor),
+                name=name,
+                label=label,
+            )
+        )
+    # платы вперёд, затем прочие USB, затем безусб (ttyS*), внутри — по имени
+    ports.sort(key=lambda pi: (not pi.is_board, not pi.is_usb, pi.device))
+    return ports
+
+
+def list_serial_ports() -> list[tuple[str, str]]:
+    """Доступные serial-порты: (устройство, имя/описание). Для CLI и мастера."""
+    return [(p.device, p.name or p.description) for p in scan_serial_ports()]

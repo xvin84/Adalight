@@ -8,7 +8,7 @@ import sys
 from . import __version__
 from .capture import CaptureError, list_outputs
 from .config import Config
-from .device import DeviceError, list_serial_ports
+from .device import DeviceError, scan_serial_ports
 from .engine import Engine
 
 
@@ -23,13 +23,14 @@ def _print_outputs() -> None:
 
 
 def _print_ports() -> None:
-    ports = list_serial_ports()
+    ports = scan_serial_ports()
     if not ports:
         print("Serial-порты не найдены.")
         return
-    print("Доступные порты:")
-    for device, desc in ports:
-        print(f"  {device:16s} {desc}")
+    print("Доступные порты (★ — вероятно плата Adalight):")
+    for p in ports:
+        mark = "★" if p.is_board else " "
+        print(f"  {mark} {p.device:16s} {p.name or p.description}")
 
 
 def main(argv: list[str] | None = None) -> int:

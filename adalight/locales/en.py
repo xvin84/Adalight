@@ -17,6 +17,8 @@ TRANSLATIONS: dict[str, str] = {
     "Эффекты лампы": "Lamp effects",
     "Эффекты режима «Лампа»: цвет, градиент, радуги, дыхание, камин, комета, северное сияние, звёздное небо. Встроенный мод — выключение уберёт эффекты.": "Effects for the “Lamp” mode: color, gradient, rainbows, breathing, fireplace, comet, aurora, starry sky. A built-in mod — disabling it removes the effects.",
     "Уведомление из Telegram — голубая вспышка на ленте, из Discord — фиолетовая. Позиция и размер настраиваются. На Windows потребуется разрешить доступ к уведомлениям (Параметры → Конфиденциальность).": "A Telegram notification — a blue flash on the strip, Discord — purple. Position and size are configurable. On Windows you'll need to grant access to notifications (Settings → Privacy).",
+    "Бета-версия — возможны ошибки, пишите о них в issues.":
+        "Beta — bugs are possible, please report them in the issues.",
     " · с ошибками: {n}": " · with errors: {n}",
     "(основной)": "(primary)",
     "**Предложение:**\n\n**Зачем это нужно:**\n": "**Proposal:**\n\n**Why it's needed:**\n",
@@ -201,7 +203,12 @@ TRANSLATIONS: dict[str, str] = {
     "Поиск плагинов…": "Search plugins…",
     "Пока не получилось запустить ({msg}). Пробую снова каждые 10 секунд.": "Couldn't start yet ({msg}). Retrying every 10 seconds.",
     "Показать вспышку на ленте (подсветка должна работать)": "Show a flash on the strip (the lighting must be running)",
+    "Показать все порты": "Show all ports",
     "Показать окно": "Show window",
+    "По умолчанию показаны только платы (Arduino/ESP) и USB-устройства.\n"
+    "Включите, если вашего порта нет в списке.":
+        "By default only boards (Arduino/ESP) and USB devices are shown.\n"
+        "Enable this if your port is missing from the list.",
     "Показывать картинку экрана в предпросмотре": "Show the screen image in the preview",
     "Показывать области, из которых усредняется цвет каждого диода": "Show the areas each LED's color is averaged from",
     "Полоса захвата:": "Capture band:",
