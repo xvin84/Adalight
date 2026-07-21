@@ -2,20 +2,24 @@
 
 from __future__ import annotations
 
-import importlib
 import importlib.util
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..config import default_config_path
 from .base import PluginAPI
+from .builtin import capture, effects_lamp, effects_music, notifications, transports
 
+# Модули встроенных модов — как ОБЪЕКТЫ, а не строки-имена. Статический импорт
+# выше кладёт их в граф зависимостей PyInstaller, поэтому onefile-сборка их
+# упаковывает (строковый importlib.import_module анализатор не видел — из-за
+# этого моды пропадали из .exe на Windows). Тот же приём, что в locales.
 BUILTIN_MODULES = (
-    "adalight.plugins.builtin.effects_lamp",
-    "adalight.plugins.builtin.effects_music",
-    "adalight.plugins.builtin.capture",
-    "adalight.plugins.builtin.transports",
-    "adalight.plugins.builtin.notifications",
+    effects_lamp,
+    effects_music,
+    capture,
+    transports,
+    notifications,
 )
 
 
@@ -57,15 +61,13 @@ def _load_from_module(module, *, builtin: bool = False, path: Path | None = None
 def discover() -> list[LoadedPlugin]:
     """Встроенные плагины + пользовательские из <конфиг>/plugins/*.py."""
     found: list[LoadedPlugin] = []
-    for module_name in BUILTIN_MODULES:
+    for module in BUILTIN_MODULES:
         try:
-            found.append(
-                _load_from_module(importlib.import_module(module_name), builtin=True)
-            )
+            found.append(_load_from_module(module, builtin=True))
         except Exception as e:  # noqa: BLE001 — плагин не должен ронять приложение
+            name = module.__name__.rsplit(".", 1)[-1]
             found.append(
-                LoadedPlugin(None, module_name.rsplit(".", 1)[-1],
-                             module_name, "", error=str(e), builtin=True)
+                LoadedPlugin(None, name, module.__name__, "", error=str(e), builtin=True)
             )
     user_dir = plugins_dir()
     if user_dir.is_dir():

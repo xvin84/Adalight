@@ -44,12 +44,10 @@ def _required_keys() -> set[str]:
     for _label, title, intro in mw._REPORT_TEMPLATES.values():
         keys |= {title, intro}
     # метаданные встроенных плагинов показываются через tr()
-    import importlib
-
     from adalight.plugins.manager import BUILTIN_MODULES
 
-    for mod_name in BUILTIN_MODULES:
-        plugin = importlib.import_module(mod_name).create_plugin()
+    for module in BUILTIN_MODULES:
+        plugin = module.create_plugin()
         keys |= {getattr(plugin, "title", ""), getattr(plugin, "description", "")}
     keys.discard("")
     return keys

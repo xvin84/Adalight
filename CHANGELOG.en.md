@@ -4,6 +4,15 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/);
 versions follow [SemVer](https://semver.org/). Full diffs are in the
 [GitHub releases](https://github.com/xvin84/Adalight/releases).
 
+## [0.23.0] — 2026-07-21
+
+- Fixed: on Windows the built-in mods (lamp effects, music, screen capture,
+  transports) were not found — the app reported "plugin not found" and did not
+  really work. The cause was loading mods dynamically by string name, which the
+  `.exe` builder (PyInstaller) did not see and did not bundle. Mods are now
+  imported statically and always end up in the build. Linux was unaffected
+  (running from source).
+
 ## [0.22.0] — 2026-07-21
 
 - Smart port picker: by default the list shows only boards (Arduino/ESP) and USB
