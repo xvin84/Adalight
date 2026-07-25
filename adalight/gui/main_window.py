@@ -93,7 +93,7 @@ from ..config import (
     load_profile,
     save_profile,
 )
-from ..device import scan_serial_ports
+from ..device import PortAccessError, same_device, scan_serial_ports
 from ..effects import lamp_effect as _lamp_spec
 from ..effects import lamp_effects, music_effects
 from ..effects import music_effect as _music_spec
@@ -181,7 +181,8 @@ class EngineThread(QThread):
     fpsChanged = Signal(float)
     backendReady = Signal(str)
     frameReady = Signal(object)
-    failed = Signal(str)
+    deviceChanged = Signal(bool)  # False — плата пропала, True — снова на связи
+    failed = Signal(str, str)     # сообщение, вид ("access" — нет прав на порт)
 
     def __init__(self, cfg: Config, mode: Mode, parent=None):
         super().__init__(parent)
@@ -197,10 +198,13 @@ class EngineThread(QThread):
                 on_fps=self.fpsChanged.emit,
                 on_backend=self.backendReady.emit,
                 on_frame=self.frameReady.emit,
+                on_device=self.deviceChanged.emit,
             )
             self._engine.run(self._mode)
+        except PortAccessError as e:
+            self.failed.emit(str(e), "access")
         except Exception as e:  # noqa: BLE001 — любая ошибка уходит в UI
-            self.failed.emit(str(e))
+            self.failed.emit(str(e), "")
 
     def request_stop(self) -> None:
         if self._engine is not None:
@@ -369,6 +373,7 @@ class MainWindow(QMainWindow):
         set_language(self.cfg.language)
         self.thread: EngineThread | None = None
         self._mode: Mode | None = None
+        self._mode_name = ""  # человеческое имя режима для статуса (см. _start_engine)
         self._quitting = False
         self._tray_tip_shown = False
         self._loading = True
@@ -1797,6 +1802,15 @@ class MainWindow(QMainWindow):
         )
         self.cb_language.currentIndexChanged.connect(self._on_language_changed)
         form.addRow(tr("Язык:"), self.cb_language)
+
+        self.sp_preview_fps = QSpinBox()
+        self.sp_preview_fps.setRange(1, 60)
+        self.sp_preview_fps.setToolTip(
+            tr("Как часто обновлять предпросмотр. На частоту вывода не влияет:\n"
+            "лента получает кадры своим темпом в отдельном потоке.")
+        )
+        self.sp_preview_fps.valueChanged.connect(self._on_soft_changed)
+        form.addRow(tr("FPS предпросмотра:"), self.sp_preview_fps)
         return g
 
     def _register_locales(self) -> None:
@@ -2165,6 +2179,7 @@ class MainWindow(QMainWindow):
         self.cb_language.setCurrentIndex(lang_idx if lang_idx >= 0 else 0)
         self.ch_preview_screen.setChecked(cfg.preview_screen)
         self.ch_preview_zones.setChecked(cfg.preview_zones)
+        self.sp_preview_fps.setValue(cfg.preview_fps)
         self.ch_notifications.setChecked(cfg.notifications)
         self.ch_auto_update.setChecked(cfg.auto_update)
         self.preview.show_screen = cfg.preview_screen
@@ -2265,6 +2280,7 @@ class MainWindow(QMainWindow):
             theme=self.cb_theme.currentData(),
             preview_screen=self.ch_preview_screen.isChecked(),
             preview_zones=self.ch_preview_zones.isChecked(),
+            preview_fps=self.sp_preview_fps.value(),
             notifications=self.ch_notifications.isChecked(),
             auto_update=self.ch_auto_update.isChecked(),
         )
@@ -2293,6 +2309,13 @@ class MainWindow(QMainWindow):
             if self.cb_port.itemData(i) == port:
                 self.cb_port.setCurrentIndex(i)
                 return
+        # конфиг мог хранить реальный путь (/dev/ttyUSB0), а список несёт
+        # стабильные by-id пути — сверяем и по реальному устройству
+        for i in range(self.cb_port.count()):
+            data = self.cb_port.itemData(i)
+            if data and same_device(port, str(data)):
+                self.cb_port.setCurrentIndex(i)
+                return
         self.cb_port.setCurrentText(port)
 
     def _on_show_all_ports(self, _checked: bool = False) -> None:
@@ -2305,18 +2328,33 @@ class MainWindow(QMainWindow):
         self.cb_port.clear()
         ports = scan_serial_ports()
         show_all = self.chk_all_ports.isChecked()
-        shown = [p for p in ports if show_all or p.is_usb]
-        # умный фильтр не оставил ничего — не прячем последнюю дверь, показываем всё
-        if not shown:
-            shown = ports
-        for p in shown:
-            self.cb_port.addItem(p.label, p.device)
-            if p.label != p.device:
-                self.cb_port.setItemData(
-                    self.cb_port.count() - 1, p.label, Qt.ItemDataRole.ToolTipRole
-                )
+        boards = [p for p in ports if p.is_board]
+        # неизвестный VID:PID — не повод прятать порт: показываем ниже, отдельной
+        # группой (галочка добавляет к ним и безусб-порты ttyS*)
+        others = [p for p in ports if not p.is_board and (show_all or p.is_usb)]
+        if not boards and not others:
+            others = ports  # фильтр не оставил ничего — показываем всё
+        for p in boards:
+            self._add_port_item(p)
+        if boards and others:
+            sep = self.cb_port.count()
+            self.cb_port.addItem(tr("— другие порты —"))
+            item = self.cb_port.model().item(sep)
+            if item is not None:
+                item.setEnabled(False)
+        for p in others:
+            self._add_port_item(p)
         self._select_port(current)
         self._loading = was_loading
+
+    def _add_port_item(self, p) -> None:
+        """Пункт списка портов. В данных — стабильный путь (/dev/serial/by-id на
+        Linux): он привязан к чипу и переживает смену номера (ttyUSB0 -> ttyUSB1)."""
+        self.cb_port.addItem(p.label, p.stable_device)
+        tip = p.stable_device if p.stable_device != p.device else p.label
+        self.cb_port.setItemData(
+            self.cb_port.count() - 1, tip, Qt.ItemDataRole.ToolTipRole
+        )
 
     def _refresh_outputs(self) -> None:
         was_loading, self._loading = self._loading, True
@@ -2454,6 +2492,7 @@ class MainWindow(QMainWindow):
             music_color=cfg.music_color,
             music_gain=cfg.music_gain,
             preview_screen=cfg.preview_screen,
+            preview_fps=cfg.preview_fps,
         )
         self.statusBar().showMessage(tr("Применено"), 1200)
 
@@ -2481,6 +2520,7 @@ class MainWindow(QMainWindow):
         self.thread.frameReady.connect(self.preview.set_frame)
         self.thread.fpsChanged.connect(self._on_fps)
         self.thread.backendReady.connect(self._on_backend_info)
+        self.thread.deviceChanged.connect(self._on_device_changed)
         self.thread.failed.connect(self._on_engine_failed)
         self.thread.finished.connect(self._on_engine_finished)
         self.thread.start()
@@ -2494,6 +2534,7 @@ class MainWindow(QMainWindow):
             "off": tr("Гашение"),
         }
         self.lbl_state.setText(names[mode])
+        self._mode_name = names[mode]
         self._backend_info = ""
         self._fps_text = ""
         self.lbl_hero_sub.setText(tr("Запуск…"))
@@ -2511,10 +2552,28 @@ class MainWindow(QMainWindow):
     def _on_fps(self, fps: float) -> None:
         self._fps_text = f"{fps:.1f} fps"
         self._update_hero_sub()
+        if self.tray is not None:  # реальная частота видна и из трея
+            self.tray.setToolTip(f"Adalight · {self._fps_text}")
 
     def _on_backend_info(self, name: str) -> None:
         self._backend_info = name
         self._update_hero_sub()
+
+    def _on_device_changed(self, ok: bool) -> None:
+        """Плата пропала/вернулась на ходу: движок ждёт и переоткрывает порт сам."""
+        if self.sender() is not self.thread:
+            return  # сигнал от уже заменённого потока
+        if ok:
+            self.lbl_state.setText(self._mode_name)
+            self._set_hero_dot("#2ecc71")
+            self._notify(tr("Плата снова на связи"), tr("Подсветка продолжает работу."))
+        else:
+            self.lbl_state.setText(tr("Ожидание платы…"))
+            self._set_hero_dot("#e67e22")
+            self._notify(
+                tr("Плата отключена"),
+                tr("Порт пропал. Переподключите плату — подсветка продолжится сама."),
+            )
 
     def _stop_engine(self, quiet: bool = False) -> None:
         self._cancel_pending_apply()
@@ -2539,6 +2598,8 @@ class MainWindow(QMainWindow):
             effect.setProperty("opacity", 1.0)
         self._backend_info = ""
         self._fps_text = ""
+        if self.tray is not None:
+            self.tray.setToolTip("Adalight")
         self.btn_start.setText(tr("▶ Старт"))
         self.btn_start.setStyleSheet(_BTN_START_QSS)
         self.btn_apply.setEnabled(False)
@@ -2552,7 +2613,7 @@ class MainWindow(QMainWindow):
         self.thread = None
         self._reset_running_ui()
 
-    def _on_engine_failed(self, message: str) -> None:
+    def _on_engine_failed(self, message: str, kind: str = "") -> None:
         if self._booting and self._boot_retry < _BOOT_RETRY_MAX:
             # автозапуск при входе в систему: порт/монитор могли ещё не проснуться —
             # повторяем каждые 10 секунд вместо модальной ошибки в скрытом окне
@@ -2569,7 +2630,64 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(_BOOT_RETRY_DELAY_MS, self._retry_boot)
             return
         self._booting = False
+        if kind == "access":
+            self._show_access_error(message)
+            return
         self._show_friendly_error(message)
+
+    def _show_access_error(self, message: str) -> None:
+        """EACCES — не «плата не найдена»: устройство видно, не хватает прав.
+        На Linux предлагаем установить udev-правило кнопкой (pkexec) или руками."""
+        from .. import udev
+
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle(tr("Нет доступа к порту"))
+        btn_install = None
+        if udev.is_supported():
+            box.setText(tr("Плата подключена и видна системе, но нет прав на порт."))
+            box.setInformativeText(
+                tr("Доступ выдаёт udev-правило — установите его кнопкой ниже "
+                   "(спросит пароль) или командой из «Подробностей». После "
+                   "установки переподключите плату по USB и запустите снова.")
+            )
+            box.setDetailedText(
+                message
+                + "\n\n" + tr("Команда для ручной установки:")
+                + "\n" + udev.manual_command()
+                + "\n\n" + tr("Запасной путь (системы без systemd-logind):")
+                + "\n" + udev.group_fallback_hint()
+            )
+            if not udev.is_rule_installed():
+                btn_install = box.addButton(
+                    tr("Установить правило"), QMessageBox.ButtonRole.AcceptRole
+                )
+        else:
+            # Windows: errno 13 почти всегда означает занятый порт
+            box.setText(tr("Порт занят или доступ к нему запрещён."))
+            box.setInformativeText(
+                tr("Скорее всего порт держит другая программа (Ambibox, OpenRGB, "
+                   "монитор порта Arduino IDE) — закройте её и запустите снова.")
+            )
+            box.setDetailedText(message)
+        box.addButton(QMessageBox.StandardButton.Close)
+        box.exec()
+        if btn_install is not None and box.clickedButton() is btn_install:
+            ok, err = udev.install_rule()
+            if ok:
+                QMessageBox.information(
+                    self,
+                    tr("Правило установлено"),
+                    tr("Готово. Переподключите плату по USB и запустите "
+                       "подсветку ещё раз."),
+                )
+            else:
+                QMessageBox.warning(
+                    self,
+                    tr("Не получилось"),
+                    tr("Правило не установилось: {err}\nКоманда для ручной "
+                       "установки — в «Подробностях» окна ошибки.").format(err=err),
+                )
 
     def _show_friendly_error(self, message: str) -> None:
         """Ошибка человеческим языком + подсказки; технические детали — по кнопке."""

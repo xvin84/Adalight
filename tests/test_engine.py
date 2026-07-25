@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from adalight.config import Config
+from adalight.device import DeviceError
 from adalight.engine import Engine, band_rects, localize_slice
 from adalight.geometry import LedGeometry
 
@@ -388,3 +389,137 @@ def test_engine_frame_event_carries_colors():
     engine.run("off")  # режим off эмитит один (нулевой) кадр
     assert len(frames) == 1
     assert frames[0].shape == (cfg.total_leds, 3)
+
+
+# ── производительность вывода: тесты на полной скорости, троттлинг превью ──
+
+
+def _run_mode_briefly(engine, mode, seconds):
+    t = threading.Thread(target=engine.run, args=(mode,))
+    t.start()
+    time.sleep(seconds)
+    engine.stop()
+    t.join(timeout=5.0)
+    assert not t.is_alive(), "движок не остановился"
+
+
+def test_chase_sends_at_full_rate():
+    """«Бегущая точка» шлёт кадры на полной скорости тракта: это встроенный
+    замер пропускной способности, а не 8 кадров в секунду по таймеру."""
+    cfg = make_cfg()
+    fake_serial = FakeSerial()
+    engine = Engine(cfg)
+    engine.device.connect = lambda: _inject_fake_serial(engine, fake_serial)
+    _run_mode_briefly(engine, "chase", 0.5)
+    # старый темп — кадр раз в 0.12 с (~4 за полсекунды); теперь десятки
+    assert len(fake_serial.frames) > 40, len(fake_serial.frames)
+
+
+def test_sides_reports_fps():
+    """Тест сторон сообщает реальный fps — проблема тракта видна без скриптов."""
+    cfg = make_cfg()
+    fps_values = []
+    fake_serial = FakeSerial()
+    engine = Engine(cfg, on_fps=fps_values.append)
+    engine.device.connect = lambda: _inject_fake_serial(engine, fake_serial)
+    _run_mode_briefly(engine, "sides", 1.3)
+    assert fps_values, "fps не публиковался"
+    assert max(fps_values) > 30, fps_values
+
+
+def test_chase_dot_advances_with_time():
+    """Точка движется в темпе CHASE_STEP_S, даже когда кадры летят сотнями."""
+    cfg = make_cfg()
+    fake_serial = FakeSerial()
+    engine = Engine(cfg)
+    engine.device.connect = lambda: _inject_fake_serial(engine, fake_serial)
+    _run_mode_briefly(engine, "chase", 0.5)
+    lit = []
+    for f in fake_serial.frames[:-1]:  # последний — гашение при close()
+        colors = np.frombuffer(f[6:], np.uint8).reshape(-1, 3)
+        lit.append(int(colors.sum(axis=1).argmax()))
+    # за ~0.5 с точка должна сдвинуться на ~4 позиции (0.12 с на шаг), не на сотни
+    assert 2 <= len(set(lit)) <= 8, sorted(set(lit))
+
+
+def test_preview_callback_throttled():
+    """on_colors троттлится до preview_fps: GUI не получает сотни событий в
+    секунду и перерисовка предпросмотра не мешает циклу вывода."""
+    cfg = make_cfg(target_fps=240, preview_fps=10)
+    fake_serial = FakeSerial()
+    emitted = []
+    engine = Engine(cfg, on_colors=emitted.append, backend_factory=lambda _: FakeBackend())
+    engine.device.connect = lambda: _inject_fake_serial(engine, fake_serial)
+    _run_mode_briefly(engine, "live", 1.0)
+    sent = len(fake_serial.frames)
+    shown = len(emitted)
+    assert shown <= 15, shown           # ~10 в секунду с запасом на тайминги CI
+    assert sent > shown * 3, (sent, shown)  # кадров на ленту сильно больше
+
+
+class FlakyTransport:
+    """Транспорт с «выдёргиваемым» устройством: fail=True — connect и send падают."""
+
+    def __init__(self):
+        self.fail = False
+        self.frames: list[np.ndarray] = []
+        self.connects = 0
+
+    def connect(self):
+        self.connects += 1
+
+    def send_raw(self, data):
+        if self.fail:
+            raise DeviceError("устройство пропало")
+        self.frames.append(np.array(data))
+
+    def close(self):
+        pass
+
+
+def test_device_lost_then_auto_reconnect(monkeypatch):
+    """Отключение платы не роняет цикл: движок ждёт и переоткрывает порт сам."""
+    from adalight import events
+
+    monkeypatch.setattr("adalight.engine.RECONNECT_INTERVAL_S", 0.05)
+    cfg = make_cfg(target_fps=120)
+    transport = FlakyTransport()
+    states = []
+    engine = Engine(cfg, on_device=states.append, backend_factory=lambda _: FakeBackend())
+
+    def fake_connect():
+        if transport.fail:
+            raise DeviceError("порта нет")
+        engine.device._transport = transport
+
+    engine.device.connect = fake_connect
+    bus_log = []
+    events.subscribe("device.lost", lambda p: bus_log.append("lost"))
+    events.subscribe("device.restored", lambda p: bus_log.append("restored"))
+
+    t = threading.Thread(target=engine.run, args=("live",))
+    t.start()
+    deadline = time.time() + 5.0
+    while len(transport.frames) < 3 and time.time() < deadline:
+        time.sleep(0.01)
+
+    transport.fail = True  # «выдернули» плату
+    while (not states or states[-1] is not False) and time.time() < deadline:
+        time.sleep(0.01)
+    assert states and states[-1] is False, "движок не заметил пропажу устройства"
+    stalled = len(transport.frames)
+    time.sleep(0.15)
+    assert len(transport.frames) == stalled, "кадры шлются в отключённое устройство"
+
+    transport.fail = False  # «воткнули» обратно
+    while (not states or states[-1] is not True) and time.time() < deadline:
+        time.sleep(0.01)
+    while len(transport.frames) <= stalled + 3 and time.time() < deadline:
+        time.sleep(0.01)
+    engine.stop()
+    t.join(timeout=5.0)
+    assert not t.is_alive()
+
+    assert states[-1] is True, "движок не сообщил о восстановлении"
+    assert len(transport.frames) > stalled + 3, "вывод не возобновился"
+    assert "lost" in bus_log and "restored" in bus_log

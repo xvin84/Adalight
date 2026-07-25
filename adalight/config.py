@@ -80,9 +80,11 @@ class Config:
     flip_x: bool = False
     flip_y: bool = False
 
-    # Захват и производительность
+    # Захват и производительность. target_fps — потолок цикла вывода; реальный
+    # fps ограничен захватом и скоростью порта (500000 бод ≈ 137 fps при 120
+    # диодах), поэтому дефолт с запасом — лента получает всё, что успевает тракт.
     backend: str = "auto"
-    target_fps: int = 30
+    target_fps: int = 120
     grim_scale: float = 0.03
 
     # Обработка картинки
@@ -152,6 +154,7 @@ class Config:
     language: str = "ru"         # код языка (ru — исходный; остальные из локалей)
     preview_screen: bool = True  # показывать картинку экрана в предпросмотре
     preview_zones: bool = True   # показывать зоны сбора цвета
+    preview_fps: int = 15        # частота обновления предпросмотра (не мешает выводу)
     notifications: bool = True   # системные уведомления из трея
     auto_update: bool = False    # при запуске тихо скачать и установить обновление
     show_all_ports: bool = False # в списке порта показывать все serial-порты, а не только платы
@@ -183,6 +186,8 @@ class Config:
             raise ValueError("Неверная скорость порта")
         if not 1 <= self.target_fps <= 240:
             raise ValueError("target_fps должен быть в диапазоне 1..240")
+        if not 1 <= self.preview_fps <= 60:
+            raise ValueError("preview_fps должен быть в диапазоне 1..60")
         if not 0.0 <= self.smooth < 1.0:
             raise ValueError("smooth должен быть в диапазоне [0, 1)")
         if not 0.0 < self.band_size <= 0.5 or not 0.0 < self.window_size <= 0.5:

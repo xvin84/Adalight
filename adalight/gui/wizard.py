@@ -173,7 +173,8 @@ class SetupWizard(QWizard):
         ports = scan_serial_ports()
         shown = [p for p in ports if p.is_usb] or ports  # только USB; иначе — все
         for p in shown:
-            self.cb_port.addItem(p.label, p.device)
+            # в данных — стабильный путь (by-id на Linux): переживает смену номера
+            self.cb_port.addItem(p.label, p.stable_device)
         if current:
             for i in range(self.cb_port.count()):
                 if self.cb_port.itemData(i) == current:

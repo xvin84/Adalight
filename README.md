@@ -113,6 +113,22 @@ no Python required:
 - **Linux**: `Adalight-linux-x86_64` (then `chmod +x Adalight-linux-x86_64`;
   Wayland capture additionally needs `wf-recorder` installed)
 
+### Port permissions (Linux)
+
+If you see "no access to the port" on start — install the bundled udev rule:
+the app offers to install it with one button, or copy
+[`packaging/99-adalight.rules`](packaging/99-adalight.rules) to
+`/etc/udev/rules.d/` manually and run:
+
+```bash
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+The rule grants access to the user of the graphical session via systemd-logind —
+no group membership or re-login needed (replug the board over USB after
+installing). Fallback for systems without logind: `sudo usermod -aG dialout
+$USER` (`uucp` group on Arch), then re-login.
+
 ## Firmware
 
 Your board (Arduino/ESP) needs an Adalight-compatible sketch. A ready-to-flash

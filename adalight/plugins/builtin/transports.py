@@ -14,13 +14,27 @@ import numpy as np
 import serial
 
 from ...config import Config
-from ...device import DeviceError, build_header, color_order_indices
+from ...device import (
+    DeviceError,
+    PortAccessError,
+    build_header,
+    color_order_indices,
+    find_fallback_port,
+)
 
 # WLED realtime-протоколы (https://kno.wled.ge/interfaces/udp-realtime/)
 WLED_DRGB = 2       # до 490 диодов одним пакетом
 WLED_DNRGB = 4      # с оффсетом, для длинных лент
 WLED_TIMEOUT_S = 255  # 255 = не возвращаться к встроенным эффектам, пока идут пакеты
 _DNRGB_CHUNK = 489
+
+
+def _is_access_denied(e: Exception) -> bool:
+    """EACCES (errno 13) в любом обличии: pyserial заворачивает OSError в строку."""
+    if getattr(e, "errno", None) == 13:
+        return True
+    s = str(e).lower()
+    return "errno 13" in s or "permission denied" in s or "access is denied" in s
 
 
 class SerialTransport:
@@ -34,11 +48,29 @@ class SerialTransport:
 
     def connect(self) -> None:
         try:
-            self.ser = serial.Serial(self.cfg.port, self.cfg.baud, timeout=1)
-        except serial.SerialException as e:
-            raise DeviceError(f"Не удалось открыть порт {self.cfg.port}: {e}") from e
+            self.ser = self._open(self.cfg.port)
+        except PortAccessError:
+            raise  # права не появятся от смены порта — сразу наверх
+        except DeviceError:
+            # порт мог сменить номер после переподключения (ttyUSB0 -> ttyUSB1,
+            # COM5 -> COM7); если среди портов ровно одна плата — берём её
+            fallback = find_fallback_port(self.cfg.port)
+            if fallback is None:
+                raise
+            self.ser = self._open(fallback.stable_device)
         time.sleep(2.5)  # Arduino перезагружается при открытии порта
         self.ser.reset_input_buffer()
+
+    def _open(self, port: str) -> serial.Serial:
+        try:
+            return serial.Serial(port, self.cfg.baud, timeout=1)
+        except serial.SerialException as e:
+            if _is_access_denied(e):
+                raise PortAccessError(
+                    f"Нет прав доступа к порту {port} (errno 13). Устройство "
+                    "подключено и видно системе — не хватает только прав."
+                ) from e
+            raise DeviceError(f"Не удалось открыть порт {port}: {e}") from e
 
     def send_raw(self, data8: np.ndarray) -> None:
         if self.ser is None:

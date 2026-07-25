@@ -86,7 +86,15 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
-        engine = Engine(cfg, on_fps=lambda f: print(f"\r~{f:.1f} fps   ", end="", flush=True))
+        engine = Engine(
+            cfg,
+            on_fps=lambda f: print(f"\r~{f:.1f} fps   ", end="", flush=True),
+            on_device=lambda ok: print(
+                "\nПлата снова на связи."
+                if ok
+                else "\nПлата отключена — жду переподключения…"
+            ),
+        )
     except ValueError as e:
         print(f"Ошибка конфигурации: {e}", file=sys.stderr)
         return 2

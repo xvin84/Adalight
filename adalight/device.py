@@ -8,7 +8,10 @@
 from __future__ import annotations
 
 import math
+import os
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -17,6 +20,11 @@ from .config import Config
 
 class DeviceError(RuntimeError):
     pass
+
+
+class PortAccessError(DeviceError):
+    """Порт есть, но нет прав доступа (EACCES). Это не «плата не найдена»:
+    устройство видно, лечится выдачей прав (udev-правило), а не переподключением."""
 
 
 def _kelvin_raw(kelvin: float) -> np.ndarray:
@@ -130,6 +138,16 @@ class AdalightDevice:
                 self._transport.close()
             self._transport = None
 
+    def drop(self) -> None:
+        """Закрыть транспорт без гашения ленты: устройство пропало, писать некуда.
+        Ошибки глотаются — порт мог исчезнуть вместе с файлом устройства."""
+        if self._transport is not None:
+            try:
+                self._transport.close()
+            except Exception:  # noqa: BLE001 — исчезнувший порт падает чем угодно
+                pass
+            self._transport = None
+
     def process(self, colors: np.ndarray) -> np.ndarray:
         """Цветокоррекция: насыщенность + гамма/яркость (через LUT). Вход и выход — RGB."""
         c = np.clip(colors, 0.0, 255.0) / 255.0
@@ -173,12 +191,63 @@ _BOARD_VENDORS: dict[int, str] = {
 # («Arduino Uno»); у мостов (CH340/CP210x/FTDI) продукт неинформативен.
 _NATIVE_USB_VENDORS = frozenset({0x2341, 0x2A03, 0x303A, 0x239A, 0x2E8A})
 
+# Точные имена чипов по паре VID:PID — надёжнее строк описания, которые ядро
+# Linux и драйвер WCH под Windows отдают по-разному для одного и того же чипа.
+_CHIP_NAMES: dict[tuple[int, int], str] = {
+    (0x1A86, 0x7523): "CH340",
+    (0x1A86, 0x55D4): "CH9102",
+    (0x10C4, 0xEA60): "CP2102",
+    (0x0403, 0x6001): "FT232",
+}
+
+_BY_ID_DIR = Path("/dev/serial/by-id")
+
+
+def stable_paths_supported() -> bool:
+    """Есть ли на этой ОС стабильные пути устройств (Linux и только он).
+
+    Важно не только для поиска пути: os.path.realpath на Windows открывает
+    устройство через CreateFileW, а для COM-порта это может вернуть ошибку
+    драйвера (ERROR_GEN_FAILURE / ERROR_SEM_TIMEOUT / ERROR_IO_DEVICE), которой
+    нет в белом списке ntpath — и тогда realpath бросает OSError. Поэтому имена
+    COM-портов через realpath не пропускаем вовсе.
+    """
+    return sys.platform.startswith("linux")
+
+
+def _stable_paths(by_id_dir: Path = _BY_ID_DIR) -> dict[str, str]:
+    """Linux: {реальный путь ("/dev/ttyUSB0") -> стабильный путь by-id}.
+
+    Путь из /dev/serial/by-id привязан к чипу и переживает переподключение,
+    когда ядро выдаёт устройству новый номер (ttyUSB0 -> ttyUSB1).
+    """
+    mapping: dict[str, str] = {}
+    try:
+        for link in by_id_dir.iterdir():
+            mapping[os.path.realpath(link)] = str(link)
+    except OSError:
+        pass  # не Linux или каталога нет (нет USB-serial устройств)
+    return mapping
+
+
+def same_device(a: str, b: str) -> bool:
+    """Один ли это порт: сравнение сырых путей, на Linux — ещё и по realpath
+    (стабильный by-id путь и /dev/ttyUSBn указывают на одно устройство)."""
+    if a == b:
+        return True
+    if not a or not b or not stable_paths_supported():
+        return False
+    try:
+        return os.path.realpath(a) == os.path.realpath(b)
+    except OSError:
+        return False
+
 
 @dataclass(frozen=True)
 class PortInfo:
     """Serial-порт с распознаванием платы по USB-дескриптору."""
 
-    device: str        # "/dev/ttyUSB0" или "COM5" — то, что уходит в cfg.port
+    device: str        # "/dev/ttyUSB0" или "COM5" — реальный путь устройства
     description: str    # сырое описание из pyserial
     vid: int | None
     pid: int | None
@@ -186,6 +255,27 @@ class PortInfo:
     is_board: bool      # узнан как Arduino/ESP/USB-serial мост
     name: str           # человеческое имя платы/чипа ("Arduino Uno", "CH340"), "" если нет
     label: str          # готовая строка для показа: "COM5 — Arduino Uno"
+    stable_device: str = ""  # /dev/serial/by-id/… (Linux); совпадает с device, если нет
+
+    def __post_init__(self):
+        if not self.stable_device:
+            object.__setattr__(self, "stable_device", self.device)
+
+
+def _stable_for(device: str, stable: dict[str, str]) -> str:
+    """Стабильный путь устройства ("" — его нет).
+
+    Пустая карта (не Linux) — сразу пусто: realpath на имени COM-порта трогать
+    нельзя, см. stable_paths_supported().
+    """
+    if not stable:
+        return ""
+    if device in stable:
+        return stable[device]
+    try:
+        return stable.get(os.path.realpath(device), "")
+    except OSError:
+        return ""
 
 
 def scan_serial_ports() -> list[PortInfo]:
@@ -196,10 +286,11 @@ def scan_serial_ports() -> list[PortInfo]:
     """
     from serial.tools import list_ports
 
+    stable = _stable_paths() if stable_paths_supported() else {}
     ports: list[PortInfo] = []
     for p in list_ports.comports():
         vid, pid = p.vid, p.pid
-        vendor = _BOARD_VENDORS.get(vid or -1, "")
+        vendor = _CHIP_NAMES.get((vid or -1, pid or -1)) or _BOARD_VENDORS.get(vid or -1, "")
         product = (p.product or "").strip()
         if vid in _NATIVE_USB_VENDORS and product:
             name = product
@@ -222,11 +313,28 @@ def scan_serial_ports() -> list[PortInfo]:
                 is_board=bool(vendor),
                 name=name,
                 label=label,
+                stable_device=_stable_for(p.device, stable),
             )
         )
     # платы вперёд, затем прочие USB, затем безусб (ttyS*), внутри — по имени
     ports.sort(key=lambda pi: (not pi.is_board, not pi.is_usb, pi.device))
     return ports
+
+
+def find_fallback_port(missing: str) -> PortInfo | None:
+    """Замена пропавшему порту: единственная подключённая плата.
+
+    После переподключения устройство может получить другой номер (ttyUSB0 ->
+    ttyUSB1, COM5 -> COM7). Если настроенный порт исчез, а среди нынешних
+    портов ровно одна распознанная плата — это она и есть. При нескольких
+    платах не угадываем.
+    """
+    ports = scan_serial_ports()
+    for p in ports:
+        if same_device(missing, p.device) or same_device(missing, p.stable_device):
+            return None  # порт на месте — дело не в переподключении
+    boards = [p for p in ports if p.is_board]
+    return boards[0] if len(boards) == 1 else None
 
 
 def list_serial_ports() -> list[tuple[str, str]]:

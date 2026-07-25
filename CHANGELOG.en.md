@@ -4,6 +4,45 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/);
 versions follow [SemVer](https://semver.org/). Full diffs are in the
 [GitHub releases](https://github.com/xvin84/Adalight/releases).
 
+## [0.24.0] — 2026-07-25
+
+Output performance and port handling. The app was pushing ~25 fps to the strip
+while the link could do 137; profiling showed nearly the whole frame was spent
+averaging zones over the full frame, with the loop capped by `target_fps: 30`.
+
+- Zone averaging now uses a fixed sample grid (16×16 per zone, one vectorized
+  numpy call per frame): ~35 ms on a 1080p frame became ~1.5 ms — the cost no
+  longer depends on the screen resolution.
+- Default `target_fps` raised from 30 to 120: the ceiling is now set by capture
+  and port speed, not by an app timer. A saved config keeps the old value —
+  raise "Target FPS" in the settings.
+- The "sides" and "running dot" tests send frames at the full pipeline rate and
+  report fps — a built-in throughput measurement without external scripts (the
+  dot still moves at an eye-friendly pace).
+- A real fps counter (averaged over a second) in every mode, in the status card
+  and in the tray icon tooltip.
+- The preview refreshes at its own rate (15 fps by default, configurable in
+  "Appearance") — UI repaints no longer get in the way of the output loop.
+- Built-in pipeline profiler: `ADALIGHT_PROFILE=1` prints the per-section frame
+  breakdown (capture / frame / port / preview / wait) to stderr.
+- Unplugging the board no longer kills the backlight: the engine switches to
+  "Waiting for the board…", reopens the port every 2 seconds and resumes on its
+  own after replugging (`device.lost` / `device.restored` events for plugins too).
+- On Linux the port is remembered by its stable `/dev/serial/by-id/…` path,
+  which is tied to the chip and survives renumbering (`ttyUSB0` → `ttyUSB1`).
+  If the port is still gone and exactly one board is present — it is used.
+- Chips are told apart by the VID:PID pair (CH340 vs CH9102 are no longer
+  confused); ports with unknown chips are not hidden but shown in an
+  "other ports" group.
+- Release builds are now verified by running them: the built binary must start
+  (and, on Linux, bring up its window) or the release is not published. The old
+  check only made sure the file existed.
+- The permission error (`errno 13`) no longer looks like "board not found": a
+  dedicated dialog explains the device is visible and offers to install the
+  udev rule with one button (via pkexec) or show the manual command. The rule
+  (`packaging/99-adalight.rules`, `TAG+="uaccess"` — access via systemd-logind,
+  no groups or re-login) ships with the app and the release.
+
 ## [0.23.0] — 2026-07-21
 
 - Fixed: on Windows the built-in mods (lamp effects, music, screen capture,

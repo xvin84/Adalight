@@ -19,9 +19,10 @@ import numpy as np
 from . import events
 from .capture import create_backend
 from .config import Config, parse_hex_color
-from .device import AdalightDevice
+from .device import AdalightDevice, DeviceError
 from .effects import render_lamp
 from .geometry import LedGeometry, Slice
+from .profiling import LoopProfiler
 from .schedule import ScheduleRule, brightness_at, parse_rules
 
 Mode = Literal["live", "lamp", "music", "chase", "sides", "off"]
@@ -31,12 +32,72 @@ NIGHT_COLOR_TEMP = 3400
 NIGHT_BRIGHTNESS_FACTOR = 0.6
 NIGHT_MIN_SMOOTH = 0.7
 
+# Тесты («стороны», «бегущая точка») шлют кадры на полной скорости тракта —
+# это встроенный замер пропускной способности; кап защищает от спина на
+# неблокирующих транспортах (WLED/UDP).
+TEST_FPS_CAP = 240
+CHASE_STEP_S = 0.12       # шаг точки по ленте — визуальный темп, не темп кадров
+
+RECONNECT_INTERVAL_S = 2.0  # пауза между попытками переоткрыть пропавший порт
+
+
+class _FpsCounter:
+    """Реальная частота отправки кадров, усреднённая за секунду.
+
+    frame() — успешно отправленный кадр; poll() — вызывать каждую итерацию,
+    чтобы счётчик публиковал и нули (устройство пропало — в UI виден 0 fps).
+    """
+
+    def __init__(self, callback: Callable[[float], None] | None):
+        self._cb = callback
+        self._t0 = time.monotonic()
+        self._n = 0
+
+    def frame(self) -> None:
+        self._n += 1
+        self.poll()
+
+    def poll(self) -> None:
+        now = time.monotonic()
+        if now - self._t0 >= 1.0:
+            if self._cb is not None:
+                self._cb(self._n / (now - self._t0))
+            self._t0, self._n = now, 0
+
 SIDE_TEST_PALETTE = {
     "top": (255, 0, 0),      # красный
     "right": (0, 255, 0),    # зелёный
     "bottom": (0, 0, 255),   # синий
     "left": (255, 200, 0),   # жёлтый
 }
+
+# Среднему цвету зоны хватает сетки 16x16 отсчётов: и полное усреднение зон
+# (~35 мс на кадре 1080p), и поштучные reg.mean() по 120 зонам (~5 мс оверхеда
+# вызовов) душили конвейер — профиль фазы 0 показал именно этот участок.
+ZONE_SAMPLE = 16
+
+
+class ZoneSampler:
+    """Средний цвет всех зон одним обращением к numpy: k×k отсчётов на зону.
+
+    Сетки индексов строятся один раз под известное разрешение; на кадре
+    остаётся одно выборочное чтение и один mean — время не зависит от
+    разрешения экрана, а цвет совпадает с честным средним с точностью до шума.
+    """
+
+    def __init__(self, slices: list[Slice], height: int, width: int, k: int = ZONE_SAMPLE):
+        n = len(slices)
+        self._ys = np.empty((n, k, 1), dtype=np.intp)
+        self._xs = np.empty((n, 1, k), dtype=np.intp)
+        for i, (y1, y2, x1, x2) in enumerate(slices):
+            ys = np.linspace(y1, max(y1, y2 - 1), k).round().astype(np.intp)
+            xs = np.linspace(x1, max(x1, x2 - 1), k).round().astype(np.intp)
+            self._ys[i, :, 0] = np.clip(ys, 0, max(height - 1, 0))
+            self._xs[i, 0, :] = np.clip(xs, 0, max(width - 1, 0))
+
+    def means(self, img: np.ndarray) -> np.ndarray:
+        """Массив (зоны, 3) средних цветов зон кадра."""
+        return img[self._ys, self._xs].mean(axis=(1, 2), dtype=np.float64)
 
 
 def band_rects(
@@ -77,6 +138,7 @@ class Engine:
         on_fps: Callable[[float], None] | None = None,
         on_backend: Callable[[str], None] | None = None,
         on_frame: Callable[[np.ndarray], None] | None = None,
+        on_device: Callable[[bool], None] | None = None,
         backend_factory: Callable[[Config], object] = create_backend,
     ):
         cfg.validate()
@@ -87,10 +149,21 @@ class Engine:
         self._on_fps = on_fps
         self._on_backend = on_backend
         self._on_frame = on_frame
+        self._on_device = on_device
         self._preview_frames = cfg.preview_screen
         self._backend_factory = backend_factory
         self._stop = threading.Event()
         self._lock = threading.Lock()
+        self._profiler = LoopProfiler.from_env()
+
+        # предпросмотр цветов в GUI обновляется реже, чем идут кадры на ленту:
+        # глазу в интерфейсе хватает preview_fps, а лента получает полный поток
+        self._preview_dt = 1.0 / max(cfg.preview_fps, 1)
+        self._preview_colors_t = 0.0
+
+        # потеря устройства на ходу не роняет цикл — ждём и переоткрываем порт
+        self._device_ok = True
+        self._reconnect_t = 0.0
 
         # живые параметры (могут меняться из GUI-потока)
         self._smooth = cfg.smooth
@@ -260,6 +333,7 @@ class Engine:
         music_color: str | None = None,
         music_gain: float | None = None,
         preview_screen: bool | None = None,
+        preview_fps: int | None = None,
     ) -> None:
         """Применение «мягких» настроек на лету. schedule — сырой список из конфига."""
         with self._lock:
@@ -289,6 +363,8 @@ class Engine:
                 self._night = night_mode
             if preview_screen is not None:
                 self._preview_frames = preview_screen
+            if preview_fps is not None:
+                self._preview_dt = 1.0 / max(preview_fps, 1)
             for key, value in (
                 ("lamp_effect", lamp_effect),
                 ("lamp_color", lamp_color),
@@ -335,12 +411,50 @@ class Engine:
 
     # ── внутреннее ────────────────────────────────────────────────────────
 
-    def _emit(self, colors: np.ndarray) -> None:
+    def _emit(self, colors: np.ndarray, force: bool = False) -> None:
+        """Показ цветов наружу. Колбэк GUI троттлится до preview_fps: очередь
+        событий Qt и перерисовка в главном потоке не должны душить цикл вывода.
+        force — для разовых состояний (гашение), которые нельзя потерять."""
         out = np.asarray(colors, dtype=np.uint8)
         if self._on_colors is not None:
-            self._on_colors(out.copy())
+            now = time.monotonic()
+            if force or now - self._preview_colors_t >= self._preview_dt:
+                self._preview_colors_t = now
+                self._on_colors(out.copy())
         if events.has_subscribers("engine.frame"):  # горячий цикл — только если нужно
             events.emit("engine.frame", colors=out.copy())
+
+    def _send(self, colors: np.ndarray) -> bool:
+        """Отправка кадра с выживанием при отключении платы.
+
+        Потеря устройства переводит движок в ожидание: кадры пропускаются,
+        порт переоткрывается не чаще RECONNECT_INTERVAL_S. Порт открывается
+        и закрывается только здесь, в потоке движка (pyserial не потокобезопасен).
+        """
+        if not self._device_ok:
+            now = time.monotonic()
+            if now - self._reconnect_t < RECONNECT_INTERVAL_S:
+                return False
+            self._reconnect_t = now
+            try:
+                self.device.connect()
+            except DeviceError:
+                return False
+            self._device_ok = True
+            if self._on_device is not None:
+                self._on_device(True)
+            events.emit("device.restored", port=self.cfg.port)
+        try:
+            self.device.send_raw(colors)
+            return True
+        except DeviceError:
+            self.device.drop()
+            self._device_ok = False
+            self._reconnect_t = time.monotonic()
+            if self._on_device is not None:
+                self._on_device(False)
+            events.emit("device.lost", port=self.cfg.port)
+            return False
 
     def _effective_brightness(self, raw: np.ndarray | None) -> float:
         """Итоговая яркость: расписание (или дефолт) × адаптивный коэффициент."""
@@ -385,6 +499,14 @@ class Engine:
                     localize_slice(sides[i], slc, w, h, bw, bh)
                     for i, slc in enumerate(slices)
                 ]
+                band_samplers = []
+                for side, (_, _, rw, rh) in rects.items():
+                    idx = np.array([i for i, s in enumerate(sides) if s == side])
+                    band_samplers.append(
+                        (side, idx, ZoneSampler([local[i] for i in idx], rh, rw))
+                    )
+            else:
+                sampler = ZoneSampler(slices, h, w)
 
             self.device.connect()
 
@@ -392,7 +514,8 @@ class Engine:
             smoothed = np.zeros((n, 3))
             raw = np.empty((n, 3))
             frame_time = 1.0 / self.cfg.target_fps
-            fps_t0, fps_n = time.monotonic(), 0
+            fps = _FpsCounter(self._on_fps)
+            prof = self._profiler
             preview_t = 0.0
             # режим сна / keep-alive (см. _push_live_frame)
             last_final: np.ndarray | None = None
@@ -402,23 +525,24 @@ class Engine:
             off = np.zeros((n, 3), dtype=np.uint8)
 
             while not self._stop.is_set():
+                prof.begin()
                 t0 = time.monotonic()
 
                 got_frame = False
                 img = None
                 if use_bands:
                     bands = backend.get_bands(rects)
-                    for i, (y1, y2, x1, x2) in enumerate(local):
-                        reg = bands[sides[i]][y1:y2, x1:x2]
-                        raw[i] = reg.mean(axis=(0, 1)) if reg.size else 0.0
+                    prof.mark("захват")
+                    for side, idx, smp in band_samplers:
+                        raw[idx] = smp.means(bands[side])
                     got_frame = True
                 else:
                     img = backend.get_frame()
+                    prof.mark("захват")
                     if img is not None:
-                        for i, (y1, y2, x1, x2) in enumerate(slices):
-                            reg = img[y1:y2, x1:x2]
-                            raw[i] = reg.mean(axis=(0, 1)) if reg.size else 0.0
+                        raw[:] = sampler.means(img)
                         got_frame = True
+                prof.mark("кадр")
 
                 # уменьшенный кадр для предпросмотра экрана в GUI
                 if (
@@ -432,6 +556,7 @@ class Engine:
                         step = max(1, img.shape[0] // self.PREVIEW_HEIGHT)
                         self._on_frame(np.ascontiguousarray(img[::step, ::step]))
                         preview_t = t0
+                    prof.mark("предпросмотр")
 
                 if got_frame:
                     self._apply_brightness(raw)
@@ -445,42 +570,45 @@ class Engine:
                     if diff > self.SLEEP_CHANGE_THRESHOLD:
                         last_activity = t0  # экран изменился — это активность
                     last_final = final
+                    prof.mark("кадр")
                     if self._sleeping(t0, last_activity):
                         if not asleep:  # только что заснули — гасим один раз
-                            self.device.send_raw(off)
-                            self._emit(off)
-                            asleep = True
+                            asleep = self._send(off)
+                            prof.mark("порт")
+                            if asleep:
+                                self._emit(off, force=True)
                     else:
                         asleep = False
-                        self.device.send_raw(final)
-                        self._emit(final)
-                        last_send = t0
+                        sent = self._send(final)
+                        prof.mark("порт")
+                        if sent:
+                            fps.frame()
+                            last_send = t0
+                            self._emit(final)
+                            prof.mark("предпросмотр")
                 elif last_final is not None:
                     # нового кадра нет (статичный экран на DXGI-захвате)
                     if self._sleeping(t0, last_activity):
                         if not asleep:
-                            self.device.send_raw(off)
-                            self._emit(off)
-                            asleep = True
+                            asleep = self._send(off)
+                            if asleep:
+                                self._emit(off, force=True)
                     elif t0 - last_send > self.KEEPALIVE_S:
                         # keep-alive: переслать кадр, иначе плата заснёт через ~10 с
                         self._apply_brightness(raw)  # расписание/адаптив могли поменяться
                         final = self._apply_overlays(self.device.process(smoothed))
-                        self.device.send_raw(final)
-                        self._emit(final)
-                        last_send = t0
-                        last_final = final
+                        if self._send(final):
+                            fps.frame()
+                            last_send = t0
+                            last_final = final
+                            self._emit(final)
 
-                fps_n += 1
-                now = time.monotonic()
-                if now - fps_t0 >= 1.0:
-                    if self._on_fps is not None:
-                        self._on_fps(fps_n / (now - fps_t0))
-                    fps_t0, fps_n = now, 0
-
+                fps.poll()
                 dt = time.monotonic() - t0
                 if dt < frame_time:
                     self._stop.wait(frame_time - dt)
+                    prof.mark("ожидание")
+                prof.frame()
         finally:
             self.device.close()
             backend.close()
@@ -491,6 +619,7 @@ class Engine:
         try:
             n = self.cfg.total_leds
             frame_time = 1.0 / min(self.cfg.target_fps, 60)
+            fps = _FpsCounter(self._on_fps)
             t0 = time.monotonic()
             while not self._stop.is_set():
                 tick = time.monotonic()
@@ -499,8 +628,10 @@ class Engine:
                 raw = render_lamp(lamp, n, tick - t0, self.geom.points)
                 self._apply_brightness(None)
                 final = self._apply_overlays(self.device.process(raw))
-                self.device.send_raw(final)
-                self._emit(final)
+                if self._send(final):
+                    fps.frame()
+                    self._emit(final)
+                fps.poll()
                 dt = time.monotonic() - tick
                 if dt < frame_time:
                     self._stop.wait(frame_time - dt)
@@ -522,7 +653,7 @@ class Engine:
                 self._on_backend(f"audio {audio.samplerate} Гц")
             self.device.connect()
             off = np.zeros((n, 3), dtype=np.uint8)
-            fps_t0, fps_n = time.monotonic(), 0
+            fps = _FpsCounter(self._on_fps)
             while not self._stop.is_set():
                 block = audio.read()  # блокирует на ~blocksize/rate (~21 мс)
                 with self._lock:
@@ -531,50 +662,67 @@ class Engine:
                     current_effect = music["music_effect"]
                     renderer = make_music_renderer(current_effect, n)
                 if renderer is None:
-                    self.device.send_raw(off)
-                    self._emit(off)
+                    if self._send(off):
+                        self._emit(off)
                 else:
                     raw = renderer.render(block, audio.samplerate, music)
                     self._apply_brightness(None)
                     final = self._apply_overlays(self.device.process(raw))
-                    self.device.send_raw(final)
-                    self._emit(final)
-
-                fps_n += 1
-                now = time.monotonic()
-                if now - fps_t0 >= 1.0:
-                    if self._on_fps is not None:
-                        self._on_fps(fps_n / (now - fps_t0))
-                    fps_t0, fps_n = now, 0
+                    if self._send(final):
+                        fps.frame()
+                        self._emit(final)
+                fps.poll()
         finally:
             audio.close()
             self.device.close()
 
     def _run_chase(self) -> None:
+        """Тест «бегущая точка»: точка идёт по ленте в темпе CHASE_STEP_S, а кадры
+        уходят на полной скорости тракта — счётчик fps показывает реальную
+        пропускную способность без внешних скриптов."""
         self.device.connect()
         try:
             n = self.cfg.total_leds
-            i = 0
+            frame_time = 1.0 / TEST_FPS_CAP
+            fps = _FpsCounter(self._on_fps)
+            t_start = time.monotonic()
+            colors = np.full((n, 3), 6, dtype=np.uint8)
+            lit = 0
             while not self._stop.is_set():
-                colors = np.full((n, 3), 6, dtype=np.uint8)
+                t0 = time.monotonic()
+                i = int((t0 - t_start) / CHASE_STEP_S) % n
+                colors[lit] = 6
                 colors[i] = (255, 255, 255)
-                self.device.send_raw(colors)
-                self._emit(colors)
-                i = (i + 1) % n
-                self._stop.wait(0.12)
+                lit = i
+                if self._send(colors):
+                    fps.frame()
+                    self._emit(colors)
+                fps.poll()
+                dt = time.monotonic() - t0
+                if dt < frame_time:
+                    self._stop.wait(frame_time - dt)
         finally:
             self.device.close()
 
     def _run_sides(self) -> None:
+        """Тест сторон: цвета статичны, но кадры идут на полной скорости тракта —
+        как и «бегущая точка», это встроенный замер частоты вывода."""
         colors = np.array(
             [SIDE_TEST_PALETTE[s] for s, _, _ in self.geom.points], dtype=np.uint8
         )
         self.device.connect()
         try:
+            frame_time = 1.0 / TEST_FPS_CAP
+            fps = _FpsCounter(self._on_fps)
             while not self._stop.is_set():
-                self.device.send_raw(colors)
-                self._emit(colors)
-                self._stop.wait(0.5)
+                t0 = time.monotonic()
+                if self._send(colors):
+                    fps.frame()
+                    self._emit(colors)
+                fps.poll()
+                dt = time.monotonic() - t0
+                if dt < frame_time:
+                    self._stop.wait(frame_time - dt)
         finally:
             self.device.close()
 

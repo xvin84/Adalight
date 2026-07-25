@@ -1,0 +1,6 @@
+# Adalight: доступ пользователя графической сессии к USB-serial платам.
+# TAG+="uaccess" — права выдаёт systemd-logind, группы и перелогин не нужны.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", MODE="0660", TAG+="uaccess"

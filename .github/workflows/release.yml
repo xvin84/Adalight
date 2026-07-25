@@ -57,6 +57,18 @@ jobs:
         shell: bash
         run: test -f dist/Adalight.exe && test -f dist/Adalight-Setup.exe
 
+      # Собранный exe должен реально стартовать: проверка «файл существует»
+      # пропускала в релиз сборки, падавшие до окна («Failed to execute script
+      # main»). --list-ports поднимает весь граф импортов и опрос устройств.
+      - name: Smoke run built exe
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          $p = Start-Process -FilePath dist\Adalight.exe -ArgumentList '--list-ports' -PassThru -Wait
+          if ($p.ExitCode -ne 0) {
+            throw "Adalight.exe --list-ports завершился с кодом $($p.ExitCode)"
+          }
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -76,7 +88,9 @@ jobs:
           python-version: "3.12"
 
       - name: Install system libraries for Qt
-        run: sudo apt-get update && sudo apt-get install -y libegl1 libxkbcommon0 libpulse0
+        run: >
+          sudo apt-get update && sudo apt-get install -y
+          libegl1 libgl1 libxkbcommon0 libdbus-1-3 libpulse0
 
       - name: Install dependencies
         run: uv sync --dev
@@ -96,6 +110,23 @@ jobs:
 
       - name: Smoke check artifact exists
         run: test -f dist/Adalight-linux-x86_64
+
+      # Как и на Windows: бинарник обязан стартовать, а не просто существовать.
+      # Дополнительно поднимаем GUI вслепую (offscreen) — окно должно прожить
+      # 15 секунд, а не упасть при построении.
+      - name: Smoke run built binary
+        timeout-minutes: 3
+        run: |
+          chmod +x dist/Adalight-linux-x86_64
+          dist/Adalight-linux-x86_64 --list-ports
+          set +e
+          QT_QPA_PLATFORM=offscreen timeout 15 dist/Adalight-linux-x86_64
+          code=$?
+          set -e
+          if [ "$code" != "124" ]; then
+            echo "::error::GUI не пережил старт (код возврата $code, ожидался 124)"
+            exit 1
+          fi
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -126,3 +157,4 @@ jobs:
             dist/Adalight-Setup.exe
             dist/Adalight.exe
             dist/Adalight-linux-x86_64
+            packaging/99-adalight.rules

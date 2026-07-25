@@ -116,6 +116,22 @@ Python не нужен:
 - **Linux**: `Adalight-linux-x86_64` (затем `chmod +x Adalight-linux-x86_64`;
   для захвата на Wayland дополнительно нужен установленный `wf-recorder`)
 
+### Права на порт (Linux)
+
+Если при запуске видите «нет прав доступа к порту» — установите udev-правило
+из комплекта: приложение само предложит поставить его одной кнопкой, либо
+вручную скопируйте [`packaging/99-adalight.rules`](packaging/99-adalight.rules)
+в `/etc/udev/rules.d/` и выполните:
+
+```bash
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+Правило выдаёт доступ пользователю графической сессии через systemd-logind —
+без добавления в группы и без перелогина (после установки переподключите плату
+по USB). Запасной путь для систем без logind: `sudo usermod -aG dialout $USER`
+(на Arch — группа `uucp`), затем перелогин.
+
 ## Прошивка
 
 Плате (Arduino/ESP) нужен скетч, совместимый с Adalight. Готовый эталонный
