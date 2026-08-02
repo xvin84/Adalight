@@ -4,6 +4,34 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/);
 versions follow [SemVer](https://semver.org/). Full diffs are in the
 [GitHub releases](https://github.com/xvin84/Adalight/releases).
 
+## [0.24.1] — 2026-08-02
+
+Wayland capture did not work in the built binary: "Could not get the monitor
+list via hyprctl … returned non-zero exit status 1". Running from source worked
+fine, so the bug stayed invisible during development.
+
+- Cause: PyInstaller puts its temporary folder — with libraries from the build
+  machine (Ubuntu) — into `LD_LIBRARY_PATH`, and child processes inherit it, so
+  `hyprctl`, `grim` and `wf-recorder` loaded a foreign `libstdc++` and died
+  before doing anything ("version GLIBCXX_3.4.35 not found"). On distributions
+  with a newer toolchain (Arch and others) capture never started.
+- External programs now run through `adalight.subproc`, with the environment as
+  it was before the bundle started (`hyprctl`, `grim`, `wf-recorder`, `pkexec`
+  for the udev rule, `dbus-monitor` for notification flashes).
+- Errors became explainable: the tool's own output is included — "returned
+  non-zero exit status 1" became "hyprctl monitors: code 1, hyprctl: … version
+  GLIBCXX_3.4.35 not found". Same for `wf-recorder`: its stderr is no longer
+  discarded but shown as the reason for the crash.
+- Layout: long list items ("Perimeter spectrum", a port path, a monitor name)
+  stretched the settings column past its maximum and the right edge of the form
+  slid under the preview — on multi-monitor systems the "refresh monitors"
+  button became unreachable.
+- The brightness schedule explanation moved from the checkbox label into a
+  tooltip; a long plugin name in the manager is elided instead of growing a
+  scrollbar.
+- README screenshots updated: English ones for `README.md`, Russian ones for
+  `README.ru.md`.
+
 ## [0.24.0] — 2026-07-25
 
 Output performance and port handling. The app was pushing ~25 fps to the strip

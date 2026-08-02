@@ -10,6 +10,8 @@ import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
+from . import subproc
+
 RELEASES_API = "https://api.github.com/repos/xvin84/Adalight/releases/latest"
 ASSET_NAMES = {"win32": "Adalight.exe", "linux": "Adalight-linux-x86_64"}
 _HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "Adalight"}
@@ -68,17 +70,13 @@ def download(url: str, dest: Path, progress: Callable[[int, int], None] | None =
 
 
 def _clean_env() -> dict[str, str]:
-    """Окружение без служебных переменных PyInstaller.
+    """Окружение без служебных переменных PyInstaller (см. adalight.subproc).
 
     Их наследование заставляет новый exe искать временную папку старого
     процесса (уже удалённую) — классическая ошибка «Failed to load Python DLL
     ... Temp\\_MEI...\\python312.dll» после перезапуска.
     """
-    return {
-        k: v
-        for k, v in os.environ.items()
-        if not k.startswith("_PYI_") and k != "_MEIPASS2"
-    }
+    return subproc.system_env()
 
 
 def apply_and_restart(new_file: Path) -> None:

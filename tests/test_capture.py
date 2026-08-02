@@ -71,3 +71,29 @@ def test_capture_mod_activate_deactivate():
 
     manager.apply({"capture": {"enabled": False}})  # выключаем
     assert not loaded.running and capture.capture_source("mss") is None
+
+
+def test_hyprland_monitors_reports_stderr(monkeypatch):
+    """Причина падения hyprctl должна попадать в текст ошибки, а не теряться."""
+    import subprocess
+
+    from adalight.capture import wayland
+
+    def fake_run(cmd, **kwargs):
+        stderr = "hyprctl: libstdc++.so.6: version `GLIBCXX_3.4.35' not found\n"
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr=stderr)
+
+    monkeypatch.setattr(wayland.subproc, "run", fake_run)
+    with pytest.raises(CaptureError, match="GLIBCXX_3.4.35"):
+        wayland.hyprland_monitors()
+
+
+def test_hyprland_monitors_missing_binary(monkeypatch):
+    from adalight.capture import wayland
+
+    def fake_run(cmd, **kwargs):
+        raise FileNotFoundError(cmd[0])
+
+    monkeypatch.setattr(wayland.subproc, "run", fake_run)
+    with pytest.raises(CaptureError, match="hyprctl не найден"):
+        wayland.hyprland_monitors()

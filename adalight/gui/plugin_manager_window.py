@@ -78,6 +78,9 @@ class PluginManagerWindow(QDialog):
         self.list = QListWidget()
         self.list.setObjectName("pluginList")
         self.list.setFixedWidth(230)
+        # длинное имя плагина обрезаем многоточием, а не полосой прокрутки
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.list.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.list.currentRowChanged.connect(self._on_select)
         lay.addWidget(self.list)
 

@@ -15,6 +15,8 @@ import threading
 
 import numpy as np
 
+from ... import subproc
+
 DEFAULT_SETTINGS = {
     "enabled": False,
     "x": 0.85,          # позиция вспышки на экране (0..1)
@@ -213,7 +215,7 @@ class NotificationsPlugin:
             "interface='org.freedesktop.Notifications',member='Notify'",
         ]
         try:
-            self._proc = subprocess.Popen(
+            self._proc = subproc.popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
             )
         except FileNotFoundError as e:

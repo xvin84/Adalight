@@ -14,9 +14,9 @@ Runs on **Windows** (DXGI Desktop Duplication via `dxcam`, `mss` fallback) and
 Qt (PySide6) GUI: every setting in one window, a live preview of the LED
 layout, and a tray icon so the lighting keeps running with the window closed.
 
-![Adalight main window](assets/screenshots/main-dark.png)
+![Adalight main window](assets/screenshots/main-dark-en.png)
 
-![Plugin manager: installed plugins and catalog](assets/screenshots/plugins-dark.png)
+![Plugin manager: installed plugins and catalog](assets/screenshots/plugins-dark-en.png)
 
 ## Features
 

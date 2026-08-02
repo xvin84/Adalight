@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections
 import json
 import subprocess
 import threading
@@ -9,18 +10,25 @@ import time
 
 import numpy as np
 
+from .. import subproc
 from ..config import Config
 from .base import BaseBackend, CaptureError
 
 
 def hyprland_monitors() -> list[dict]:
     try:
-        out = subprocess.run(
-            ["hyprctl", "monitors", "-j"], capture_output=True, text=True, check=True
-        )
+        out = subproc.run(["hyprctl", "monitors", "-j"], capture_output=True, text=True)
+    except FileNotFoundError as e:
+        raise CaptureError("hyprctl не найден — сессия не Hyprland?") from e
+    if out.returncode != 0:
+        # причина всегда в stderr: без неё сообщение «код возврата 1» ничего
+        # не объясняет (так пряталась подмена libstdc++ из бандла PyInstaller)
+        detail = (out.stderr.strip() or out.stdout.strip() or "без вывода").splitlines()[0]
+        raise CaptureError(f"hyprctl monitors: код {out.returncode}, {detail}")
+    try:
         return json.loads(out.stdout)
-    except (FileNotFoundError, subprocess.CalledProcessError, json.JSONDecodeError) as e:
-        raise CaptureError(f"Не удалось получить список мониторов через hyprctl: {e}") from e
+    except json.JSONDecodeError as e:
+        raise CaptureError(f"hyprctl вернул не JSON: {e}") from e
 
 
 def resolve_output(cfg: Config) -> tuple[str, int, int]:
@@ -55,18 +63,36 @@ class WfRecorderBackend(BaseBackend):
             "-x", "bgr0", "-f", "pipe:1",
         ]
         try:
-            self._proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            self._proc = subproc.popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except FileNotFoundError as e:
             raise CaptureError("wf-recorder не установлен") from e
 
+        # stderr держим в кольцевом буфере: выбросить его в DEVNULL значит
+        # потерять причину падения, а не читать из трубы — заклинить процесс
+        self._errlog: collections.deque[str] = collections.deque(maxlen=10)
+        self._errthread = threading.Thread(target=self._drain_stderr, daemon=True)
+        self._errthread.start()
         threading.Thread(target=self._reader, daemon=True).start()
         self._wait_for_first_frame()
+
+    def _drain_stderr(self) -> None:
+        try:
+            for line in self._proc.stderr:
+                text = line.decode(errors="replace").strip()
+                if text:
+                    self._errlog.append(text)
+        except Exception:  # noqa: BLE001 — труба закрыта вместе с процессом
+            pass
 
     def _wait_for_first_frame(self) -> None:
         t0 = time.time()
         while self._latest is None:
             if self._proc.poll() is not None:
-                raise CaptureError(f"wf-recorder упал при старте (код {self._proc.returncode})")
+                self._errthread.join(timeout=0.5)  # дать дочитать причину падения
+                detail = "; ".join(self._errlog) or "без вывода"
+                raise CaptureError(
+                    f"wf-recorder упал при старте (код {self._proc.returncode}): {detail}"
+                )
             if not self._alive:
                 raise CaptureError("Поток wf-recorder оборвался")
             if time.time() - t0 > self.FIRST_FRAME_TIMEOUT:
@@ -122,7 +148,7 @@ class GrimBackend(BaseBackend):
 
     def _grab(self) -> np.ndarray:
         try:
-            p = subprocess.run(
+            p = subproc.run(
                 ["grim", "-o", self.output, "-s", str(self.cfg.grim_scale), "-t", "ppm", "-"],
                 capture_output=True,
             )

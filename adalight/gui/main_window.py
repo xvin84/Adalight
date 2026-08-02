@@ -482,6 +482,14 @@ class MainWindow(QMainWindow):
         )
         self.pages.setMinimumWidth(340)
         self.pages.setMaximumWidth(430)
+        # длинные пункты («Спектр по периметру», путь к порту, имя монитора) не
+        # должны задавать ширину колонки: она ограничена, а горизонтальной
+        # прокрутки нет — форма уезжала правым краем под предпросмотр
+        for combo in self.pages.findChildren(QComboBox):
+            combo.setSizeAdjustPolicy(
+                QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+            )
+            combo.setMinimumContentsLength(10)
         self.nav.currentRowChanged.connect(self._on_nav_changed)
         self.nav.setCurrentRow(0)
 
@@ -1231,8 +1239,10 @@ class MainWindow(QMainWindow):
         g = QGroupBox(tr("Расписание яркости"))
         lay = QVBoxLayout(g)
 
-        self.ch_schedule = QCheckBox(
-            tr("Включить (вне интервалов действует яркость «по умолчанию»)")
+        # пояснение — в подсказке: длинная надпись задавала ширину всей колонки
+        self.ch_schedule = QCheckBox(tr("Включить"))
+        self.ch_schedule.setToolTip(
+            tr("Вне интервалов действует яркость «по умолчанию»")
         )
         self.ch_schedule.toggled.connect(self._on_soft_changed)
         lay.addWidget(self.ch_schedule)

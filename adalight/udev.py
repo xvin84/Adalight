@@ -19,6 +19,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from . import subproc
+
 RULES_FILENAME = "99-adalight.rules"
 RULES_PATH = Path("/etc/udev/rules.d") / RULES_FILENAME
 
@@ -67,7 +69,7 @@ def install_rule(path: Path = RULES_PATH) -> tuple[bool, str]:
         with os.fdopen(fd, "w") as f:
             f.write(RULES_CONTENT)
         try:
-            proc = subprocess.run(
+            proc = subproc.run(
                 [
                     "pkexec", "sh", "-c",
                     'install -D -m 0644 "$1" "$2" '
