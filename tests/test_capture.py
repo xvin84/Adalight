@@ -97,3 +97,20 @@ def test_hyprland_monitors_missing_binary(monkeypatch):
     monkeypatch.setattr(wayland.subproc, "run", fake_run)
     with pytest.raises(CaptureError, match="hyprctl не найден"):
         wayland.hyprland_monitors()
+
+
+def test_resolve_output_accepts_label_from_old_config(monkeypatch):
+    """Ярлык, сохранённый старым GUI, должен разрешаться в имя монитора."""
+    from adalight.capture import wayland
+
+    monkeypatch.setattr(
+        wayland, "hyprland_monitors",
+        lambda: [{"name": "eDP-1", "width": 2560, "height": 1600},
+                 {"name": "HDMI-A-1", "width": 1920, "height": 1080}],
+    )
+    assert wayland.resolve_output(Config(output="HDMI-A-1 (1920x1080)")) == (
+        "HDMI-A-1", 1920, 1080
+    )
+    assert wayland.resolve_output(Config(output="HDMI-A-1")) == ("HDMI-A-1", 1920, 1080)
+    with pytest.raises(CaptureError, match="не найден"):
+        wayland.resolve_output(Config(output="DP-9"))

@@ -4,6 +4,22 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/);
 versions follow [SemVer](https://semver.org/). Full diffs are in the
 [GitHub releases](https://github.com/xvin84/Adalight/releases).
 
+## [0.24.2] — 2026-08-02
+
+The monitor picker broke itself: "Monitor 'HDMI-A-1 (1920x1080)' not found.
+Available: eDP-1, HDMI-A-1". The list label ended up in `output` while capture
+needs the bare name — deleting " (1920x1080)" by hand really did help.
+
+- Cause: when the monitor list was rebuilt (refresh button, re-applying the
+  settings) the field's text was remembered instead of the monitor name. The
+  field is editable, so the text went straight back in, the selected item was
+  "lost", and the full label got saved into the config.
+- A list's value now always comes from the item's data, not from its caption; a
+  name typed by hand is still kept as is.
+- An already broken config heals itself: the label is recognized both when
+  loading the UI and in capture itself — no manual `config.json` editing, `--live`
+  without the GUI included.
+
 ## [0.24.1] — 2026-08-02
 
 Wayland capture did not work in the built binary: "Could not get the monitor

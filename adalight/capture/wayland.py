@@ -39,8 +39,10 @@ def resolve_output(cfg: Config) -> tuple[str, int, int]:
     if not cfg.output:
         m = monitors[0]
         return m["name"], int(m["width"]), int(m["height"])
+    # старые версии GUI сохраняли ярлык списка целиком («HDMI-A-1 (1920x1080)»)
+    wanted = cfg.output.split(" (")[0].strip()
     for m in monitors:
-        if m["name"] == cfg.output:
+        if m["name"] == wanted:
             return m["name"], int(m["width"]), int(m["height"])
     names = ", ".join(m["name"] for m in monitors)
     raise CaptureError(f"Монитор {cfg.output!r} не найден. Доступны: {names}")

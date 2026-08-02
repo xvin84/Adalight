@@ -360,6 +360,36 @@ def app_icon() -> QIcon:
     return _make_icon()
 
 
+def combo_value(combo: QComboBox) -> str:
+    """Значение редактируемого списка: данные выбранного пункта, а не его ярлык.
+
+    В списках вида «имя (подробности)» в конфиг должно уходить имя из данных:
+    ярлык там не найдёт ни монитор, ни порт. Вписанное руками значение
+    остаётся как есть — по нему пункта в списке нет.
+    """
+    idx = combo.currentIndex()
+    text = combo.currentText().strip()
+    if combo.itemText(idx) == combo.currentText():  # выбран пункт списка
+        data = combo.itemData(idx)
+        if data is not None:
+            return str(data)
+    by_label = combo.findText(text)  # в конфиге мог осесть ярлык — вернём имя
+    if by_label >= 0 and combo.itemData(by_label) is not None:
+        return str(combo.itemData(by_label))
+    return text
+
+
+def select_combo_value(combo: QComboBox, value: str) -> None:
+    """Выбрать пункт по данным (или по ярлыку, если в конфиге лежит он)."""
+    idx = combo.findData(value)
+    if idx < 0:
+        idx = combo.findText(value)
+    if idx >= 0:
+        combo.setCurrentIndex(idx)
+    else:
+        combo.setCurrentText(value)
+
+
 class MainWindow(QMainWindow):
     pluginNotify = Signal(str, str)  # мост: уведомления из потоков плагинов в GUI
 
@@ -2166,7 +2196,7 @@ class MainWindow(QMainWindow):
         self.ch_flip_y.setChecked(cfg.flip_y)
 
         self._refresh_outputs()
-        self.cb_output.setCurrentText(cfg.output)
+        select_combo_value(self.cb_output, cfg.output)
         self._fill_backends()  # источники захвата из реестра (мод «Захват экрана»)
         self.cb_backend.setCurrentText(cfg.backend)
         self.sp_fps.setValue(cfg.target_fps)
@@ -2296,12 +2326,7 @@ class MainWindow(QMainWindow):
         )
 
     def _current_output(self) -> str:
-        idx = self.cb_output.currentIndex()
-        data = self.cb_output.itemData(idx)
-        # если пользователь вписал значение руками — берём текст
-        if data is not None and self.cb_output.itemText(idx) == self.cb_output.currentText():
-            return data
-        return self.cb_output.currentText().strip()
+        return combo_value(self.cb_output)
 
     def _current_port(self) -> str:
         idx = self.cb_port.currentIndex()
@@ -2368,13 +2393,14 @@ class MainWindow(QMainWindow):
 
     def _refresh_outputs(self) -> None:
         was_loading, self._loading = self._loading, True
-        current = self.cb_output.currentText()
+        # запоминаем имя монитора, а не ярлык: иначе пересборка списка кладёт
+        # в поле «HDMI-A-1 (1920x1080)», и это уезжает в cfg.output
+        current = self._current_output()
         self.cb_output.clear()
         self.cb_output.addItem(tr("(основной)"), "")
         for value, label in list_outputs():
             self.cb_output.addItem(label, value)
-        if current:
-            self.cb_output.setCurrentText(current)
+        select_combo_value(self.cb_output, current)
         self._loading = was_loading
 
     def _refresh_preview_layout(self) -> None:
