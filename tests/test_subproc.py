@@ -52,10 +52,11 @@ def test_system_env_keeps_library_path_when_not_frozen(monkeypatch):
 
 def test_run_and_popen_pass_clean_env(monkeypatch, frozen):
     monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/_MEI42")
-    code = "import os; print(os.environ.get('LD_LIBRARY_PATH', '<нет>'))"
+    # маркер только из ASCII: консоль Windows роняет дочерний процесс на кириллице
+    code = "import os; print(os.environ.get('LD_LIBRARY_PATH', 'unset'))"
 
     done = subproc.run([sys.executable, "-c", code], capture_output=True, text=True)
-    assert done.stdout.strip() == "<нет>"
+    assert done.stdout.strip() == "unset"
 
     proc = subproc.popen([sys.executable, "-c", code], stdout=subprocess.PIPE, text=True)
-    assert proc.communicate()[0].strip() == "<нет>"
+    assert proc.communicate()[0].strip() == "unset"
