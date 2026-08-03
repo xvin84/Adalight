@@ -3,6 +3,11 @@
 Плагин объявляет схему (список полей-словарей) — менеджер строит форму без
 кода GUI в самом плагине. Поддерживаемые типы: bool/int/float/choice/color/
 text/note (см. base.SCHEMA_FIELD_TYPES).
+
+Поле с "advanced": True прячется за галочкой «Показать дополнительные
+настройки» — так редкие параметры (паспортные токи ленты и т.п.) не мешают
+обычной настройке, но остаются доступны. Значения скрытых полей всё равно
+попадают в values(): спрятан только вид, не сама настройка.
 """
 
 from __future__ import annotations
@@ -62,22 +67,39 @@ class SettingsForm(QWidget):
         super().__init__(parent)
         self._schema = schema
         self._widgets: dict[str, object] = {}
+        self._advanced: list[tuple[QWidget | None, QWidget]] = []  # (подпись, поле)
         form = QFormLayout(self)
         form.setContentsMargins(0, 0, 0, 0)
         for field in schema:
             ftype = field.get("type")
             if ftype == "note":
-                note = QLabel(field.get("label", ""))
+                note = QLabel(tr(field.get("label", "")))
                 note.setWordWrap(True)
                 note.setObjectName("hintLabel")
                 form.addRow(note)
+                if field.get("advanced"):
+                    self._advanced.append((None, note))
                 continue
             key = field.get("key")
             if not key:
                 continue
             widget = self._make_widget(field)
             self._widgets[key] = widget
-            form.addRow(field.get("label", key) + ":", widget)
+            label = QLabel(tr(field.get("label", key)) + ":")
+            form.addRow(label, widget)
+            if field.get("advanced"):
+                self._advanced.append((label, widget))
+        if self._advanced:
+            self.chk_advanced = QCheckBox(tr("Показать дополнительные настройки"))
+            self.chk_advanced.toggled.connect(self._set_advanced_visible)
+            form.addRow(self.chk_advanced)
+            self._set_advanced_visible(False)
+
+    def _set_advanced_visible(self, shown: bool) -> None:
+        for label, widget in self._advanced:
+            if label is not None:
+                label.setVisible(shown)
+            widget.setVisible(shown)
 
     def _make_widget(self, field: dict) -> QWidget:
         ftype = field["type"]

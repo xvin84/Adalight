@@ -69,6 +69,14 @@ layout, and a tray icon so the lighting keeps running with the window closed.
   along the screen edge, works over any mode. Windows only sees **system**
   notifications, so enable system notifications in the sending app (Telegram:
   Settings → Notifications → use Windows notifications).
+- **Power guard** (built-in plugin, off by default): estimates the strip current
+  from every frame — a WS2812B channel draws 20 mA at full, so a white LED is
+  60 mA — and dims the whole strip while it is over the power budget (500 mA for
+  USB by default, minus a safety headroom and the board's own draw), never below
+  the minimum brightness you set. Dropping is instant, recovery is smooth, and
+  the status card shows the estimate live. Datasheet currents are hidden behind
+  "Show advanced settings". It is a calculation, not a measurement — it lowers
+  the risk on bright scenes but does not replace an external power supply.
 - **Report a bug / idea**: buttons in System open a prefilled GitHub issue with
   diagnostics (version, OS, capture backend, LED count) attached.
 - **WLED transport (beta)**: an ESP strip running WLED over Wi-Fi
@@ -175,6 +183,7 @@ uv run main.py --list-ports
 | Engine | `engine.py` | Capture→process→send loop (Qt-free); live/lamp/music/test modes; schedule, adaptive and night brightness; live settings |
 | Effects | `effects.py`, `audio.py` | Lamp (solid/gradient/rainbows/breathing), music (FFT + AGC over loopback audio via soundcard) |
 | Device | `device.py` | Adalight protocol, channel order, LUT gamma, color temperature, shadow cut-off |
+| Frame filters | `pipeline.py` | Registry of per-frame hooks before sending — what Power guard runs on |
 | GUI | `gui/` | PySide6: tabs, live preview with zones, tray, themes, auto-update |
 | Infra | `updates.py`, `autostart.py`, CI | GitHub Releases (auto-update), autostart (registry/XDG), exe+installer+linux binary built on `v*` tags |
 
@@ -208,6 +217,7 @@ adalight/
   geometry.py      # LED layout and capture zones
   device.py        # Adalight protocol, LUT gamma, channel order
   engine.py        # capture -> process -> send loop (no Qt)
+  pipeline.py      # frame filters applied right before sending
   capture/         # backends: dxcam (Windows), mss, wf-recorder, grim
   cli.py           # headless modes
   gui/             # PySide6: main window, preview, tray

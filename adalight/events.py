@@ -15,6 +15,8 @@
 - `engine.frame` {colors} — кадр отправлен на ленту (эмитится только если есть
   подписчики — на горячем цикле иначе бесплатно);
 - `notification.received` {app, color} — мод уведомлений увидел уведомление;
+- `power.status` {gain, current_ma, limit_ma, limited, floored} — «Защита
+  питания» приглушила ленту (или перестала: limited=False);
 - `update.available` {version, url} — доступна новая версия.
 """
 

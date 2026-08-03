@@ -4,6 +4,40 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/);
 versions follow [SemVer](https://semver.org/). Full diffs are in the
 [GitHub releases](https://github.com/xvin84/Adalight/releases).
 
+## [0.25.0] — 2026-08-03
+
+A new built-in mod, **Power guard**, for strips powered from the same board
+that drives them. A WS2812B channel draws 20 mA at full brightness, so a white
+LED is 60 mA: eight LEDs are enough to eat half an amp of USB. On bright scenes
+that current runs through the board's protection diode and traces — and it is
+the board that heats up.
+
+- The mod estimates the current from every frame before it is sent and, while
+  it stays over the power budget, dims the whole strip — but never below the
+  minimum brightness you set. It drops instantly (the limit is not exceeded for
+  even one frame) and recovers smoothly, over a configurable recovery time.
+- The estimate is taken from the original frame, not from the already dimmed
+  one, so there is no feedback loop and the brightness does not "breathe" on
+  flickering scenes.
+- Settings: power budget (500 mA USB by default), safety headroom, minimum
+  brightness and recovery time. The datasheet currents — 20 mA per channel,
+  ~1 mA idle, the board's own draw — sit behind a new **"Show advanced
+  settings"** checkbox (any mod can use it: a schema field with
+  `"advanced": true`).
+- While the strip is dimmed, the status card shows the estimated current and
+  the current brightness — a darker picture no longer looks like a bug.
+- The mod is off by default: it changes what you see on the strip, so turning
+  it on is the user's call.
+- Note: this is a calculation from datasheet currents, not a measurement. It
+  lowers the risk on bright scenes, but it does not replace an external power
+  supply and does nothing while the app is not running.
+
+To make it possible, the core got **frame filters** — a new mod API
+(`api.register_frame_filter`): a mod receives the finished frame bytes right
+before they are sent and may change them. Filters run in every mode, including
+the strip tests, and the preview now shows what actually went to the strip.
+Docs: [docs/PLUGINS.md](docs/PLUGINS.md) (ru).
+
 ## [0.24.2] — 2026-08-02
 
 The monitor picker broke itself: "Monitor 'HDMI-A-1 (1920x1080)' not found.

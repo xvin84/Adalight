@@ -392,6 +392,45 @@ TRANSLATIONS: dict[str, str] = {
     "Правило не установилось: {err}\nКоманда для ручной установки — в «Подробностях» окна ошибки.": "The rule was not installed: {err}\nThe manual command is in the “Details” of the error window.",
     "Как часто обновлять предпросмотр. На частоту вывода не влияет:\nлента получает кадры своим темпом в отдельном потоке.": "How often to refresh the preview. Does not affect the output rate:\nthe strip gets frames at its own pace in a separate thread.",
     "FPS предпросмотра:": "Preview FPS:",
+    "Защита питания": "Power guard",
+    "Считает ток ленты по кадру и плавно притушивает её, когда он выше бюджета "
+    "питания — чтобы яркие сцены не грели плату без внешнего блока.":
+        "Estimates the strip current frame by frame and smoothly dims the strip "
+        "when it goes over the power budget — so bright scenes do not heat the "
+        "board when there is no external supply.",
+    "Ток ленты оценивается по кадру перед отправкой. Пока он выше бюджета, "
+    "яркость всей ленты снижается — но не ниже минимальной. Это расчёт по "
+    "паспортным токам, а не измерение: он не заменяет внешнее питание.":
+        "The strip current is estimated from every frame before it is sent. "
+        "While it stays over budget, the brightness of the whole strip goes "
+        "down — but never below the minimum. This is a calculation from "
+        "datasheet currents, not a measurement: it does not replace an "
+        "external power supply.",
+    "Бюджет питания, мА": "Power budget, mA",
+    "USB 2.0 — 500 мА, USB 3.0 — 900 мА. С внешним блоком укажите его ток.":
+        "USB 2.0 — 500 mA, USB 3.0 — 900 mA. With an external supply, enter its "
+        "current.",
+    "Запас безопасности, %": "Safety headroom, %",
+    "Минимальная яркость": "Minimum brightness",
+    "Возврат яркости, с": "Brightness recovery, s",
+    "Ток канала диода при 255, мА": "LED channel current at 255, mA",
+    "Ток покоя диода, мА": "LED idle current, mA",
+    "Потребление платы, мА": "Board draw, mA",
+    "Плавность срабатывания, с": "Attack smoothing, s",
+    "По умолчанию — паспорт WS2812B на 5 В: 20 мА на канал (белый диод — "
+    "60 мА) и ~1 мА покоя. Для SK6812 RGBW и WS2815 на 12 В значения другие, "
+    "смотрите даташит ленты.":
+        "Defaults follow the WS2812B datasheet at 5 V: 20 mA per channel (a "
+        "white LED — 60 mA) and about 1 mA idle. SK6812 RGBW and 12 V WS2815 "
+        "differ — check your strip's datasheet.",
+    "Показать дополнительные настройки": "Show advanced settings",
+    "⚡ {ma:.0f} мА · яркость {pct:.0f}%": "⚡ {ma:.0f} mA · brightness {pct:.0f}%",
+    "⚡ {ma:.0f} мА · яркость {pct:.0f}% (минимум)":
+        "⚡ {ma:.0f} mA · brightness {pct:.0f}% (floor)",
+    "Ниже минимума мод не опускает яркость даже ценой превышения бюджета — "
+    "пока он в это упирается, в статусе видна пометка «минимум».":
+        "The mod never dims below the minimum, even at the cost of going over "
+        "budget — while it sits there, the status shows a “floor” mark.",
 }
 
 

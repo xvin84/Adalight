@@ -8,7 +8,8 @@ from __future__ import annotations
 from collections.abc import Callable
 
 # Типы полей в settings_schema плагина. Менеджер плагинов строит по схеме форму
-# настроек автоматически — плагину не нужен код GUI.
+# настроек автоматически — плагину не нужен код GUI. Поле с "advanced": True
+# прячется за галочкой «Показать дополнительные настройки».
 SCHEMA_FIELD_TYPES = ("bool", "int", "float", "choice", "color", "text", "note")
 
 
@@ -125,6 +126,19 @@ class PluginAPI:
             transport_id, label, factory,
             needs_serial=needs_serial, needs_network=needs_network, source=self._source,
         )
+
+    def register_frame_filter(self, filter_id: str, fn, *, priority: int = 50) -> None:
+        """Добавить фильтр кадра — последнюю обработку перед отправкой на ленту.
+
+        fn(colors) -> RGB (N, 3) 0..255 или None: на вход приходят готовые
+        байты кадра (после гаммы, яркости и вспышек) — ровно те, что уйдут в
+        ленту. Возврат None означает «не менять». Фильтр работает во всех
+        режимах, включая тесты ленты; priority задаёт порядок в цепочке
+        (меньше — раньше). Так устроена «Защита питания».
+        """
+        from ..pipeline import register_frame_filter
+
+        register_frame_filter(filter_id, fn, priority=priority, source=self._source)
 
     def on(self, event: str, handler) -> None:
         """Подписаться на событие шины. handler(payload: dict) вызывается при

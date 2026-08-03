@@ -8,7 +8,14 @@ from pathlib import Path
 
 from ..config import default_config_path
 from .base import PluginAPI
-from .builtin import capture, effects_lamp, effects_music, notifications, transports
+from .builtin import (
+    capture,
+    effects_lamp,
+    effects_music,
+    notifications,
+    power_guard,
+    transports,
+)
 
 # Модули встроенных модов — как ОБЪЕКТЫ, а не строки-имена. Статический импорт
 # выше кладёт их в граф зависимостей PyInstaller, поэтому onefile-сборка их
@@ -20,6 +27,7 @@ BUILTIN_MODULES = (
     capture,
     transports,
     notifications,
+    power_guard,
 )
 
 
@@ -149,15 +157,17 @@ class PluginManager:
     @staticmethod
     def _unregister_capabilities(loaded: LoadedPlugin) -> None:
         """Снять всё, что мод зарегистрировал: эффекты, источники захвата,
-        транспорты и подписки на события."""
+        транспорты, фильтры кадра и подписки на события."""
         from ..capture import unregister_source as unregister_capture
         from ..effects import unregister_source as unregister_effects
         from ..events import unsubscribe_source as unsubscribe_events
+        from ..pipeline import unregister_source as unregister_filters
         from ..transports import unregister_source as unregister_transport
 
         unregister_effects(loaded.name)
         unregister_capture(loaded.name)
         unregister_transport(loaded.name)
+        unregister_filters(loaded.name)
         unsubscribe_events(loaded.name)
 
     def get(self, name: str) -> LoadedPlugin | None:

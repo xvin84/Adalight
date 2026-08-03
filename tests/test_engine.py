@@ -523,3 +523,44 @@ def test_device_lost_then_auto_reconnect(monkeypatch):
     assert states[-1] is True, "движок не сообщил о восстановлении"
     assert len(transport.frames) > stalled + 3, "вывод не возобновился"
     assert "lost" in bus_log and "restored" in bus_log
+
+
+def test_frame_filters_apply_to_output_and_preview():
+    """Фильтр мода правит то, что реально уходит на ленту, а предпросмотр
+    показывает отправленное — иначе UI врал бы о яркости («Защита питания»)."""
+    from adalight import pipeline
+
+    pipeline.register_frame_filter("half", lambda c: c // 2, source="test")
+    try:
+        serial, emitted = run_engine_briefly(
+            make_cfg(target_fps=120), FakeBackend(color=(200, 200, 200))
+        )
+    finally:
+        pipeline.unregister_source("test")
+
+    colors = np.frombuffer(serial.frames[-1][6:], np.uint8)
+    assert np.all(np.abs(colors.astype(int) - 100) <= 1)
+    assert emitted and np.all(np.abs(emitted[-1].astype(int) - 100) <= 1)
+
+
+def test_frame_filters_apply_to_strip_tests():
+    """Тест сторон жжёт полную яркость — защита обязана работать и там."""
+    from adalight import pipeline
+
+    cfg = make_cfg()
+    fake_serial = FakeSerial()
+    engine = Engine(cfg)
+    engine.device.connect = lambda: _inject_fake_serial(engine, fake_serial)
+    pipeline.register_frame_filter("half", lambda c: c // 2, source="test")
+    try:
+        t = threading.Thread(target=engine.run, args=("sides",))
+        t.start()
+        deadline = time.time() + 5.0
+        while len(fake_serial.frames) < 2 and time.time() < deadline:
+            time.sleep(0.01)
+        engine.stop()
+        t.join(timeout=5.0)
+    finally:
+        pipeline.unregister_source("test")
+    assert not t.is_alive()
+    assert max(fake_serial.frames[0][6:]) <= 128

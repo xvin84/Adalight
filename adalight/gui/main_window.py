@@ -392,6 +392,7 @@ def select_combo_value(combo: QComboBox, value: str) -> None:
 
 class MainWindow(QMainWindow):
     pluginNotify = Signal(str, str)  # мост: уведомления из потоков плагинов в GUI
+    powerStatus = Signal(object)     # мост: статус «Защиты питания» из потока движка
 
     def __init__(self):
         super().__init__()
@@ -441,6 +442,10 @@ class MainWindow(QMainWindow):
         # авторитетная копия настроек плагинов (окно менеджера её редактирует)
         self._plugins_cfg: dict = dict(self.cfg.plugins)
         self._plugin_manager_window = None
+        # «Защита питания» приглушает ленту из потока движка — показываем это
+        # в статус-карточке, чтобы просевшая яркость не выглядела поломкой
+        self.powerStatus.connect(self._on_power_status)
+        events.subscribe("power.status", self.powerStatus.emit)
 
         self._build_ui()
         # включаем моды (регистрируют эффекты и т.п.) ДО наполнения UI из реестров
@@ -642,6 +647,7 @@ class MainWindow(QMainWindow):
 
         self._backend_info = ""
         self._fps_text = ""
+        self._power_text = ""
         self.lbl_pending = QLabel("")
         self.btn_update_bar = QPushButton("")
         self.btn_update_bar.setStyleSheet(_BTN_UPDATE_QSS)
@@ -663,9 +669,28 @@ class MainWindow(QMainWindow):
         )
 
     def _update_hero_sub(self) -> None:
-        parts = [p for p in (self._backend_info, self._fps_text) if p]
+        parts = [p for p in (self._backend_info, self._fps_text, self._power_text) if p]
         if parts:
             self.lbl_hero_sub.setText(" · ".join(parts))
+
+    def _on_power_status(self, status: dict) -> None:
+        """Статус «Защиты питания»: пока лента приглушена — видно, до скольких
+        миллиампер и во сколько раз, иначе просевшая яркость выглядит поломкой."""
+        if not status.get("limited"):
+            self._power_text = ""
+        else:
+            # «минимум» — яркость упёрлась в нижнюю границу мода, и ток всё ещё
+            # выше бюджета: молчать об этом нельзя, защиты фактически нет
+            template = (
+                tr("⚡ {ma:.0f} мА · яркость {pct:.0f}% (минимум)")
+                if status.get("floored")
+                else tr("⚡ {ma:.0f} мА · яркость {pct:.0f}%")
+            )
+            self._power_text = template.format(
+                ma=float(status.get("current_ma", 0.0)),
+                pct=float(status.get("gain", 1.0)) * 100.0,
+            )
+        self._update_hero_sub()
 
     def _on_led_clicked(self, index: int) -> None:
         if self.thread is not None and self._mode in _MAIN_MODES:
@@ -2573,6 +2598,7 @@ class MainWindow(QMainWindow):
         self._mode_name = names[mode]
         self._backend_info = ""
         self._fps_text = ""
+        self._power_text = ""
         self.lbl_hero_sub.setText(tr("Запуск…"))
         self._set_hero_dot("#2ecc71")
         self._dot_pulse.start()
@@ -2634,6 +2660,7 @@ class MainWindow(QMainWindow):
             effect.setProperty("opacity", 1.0)
         self._backend_info = ""
         self._fps_text = ""
+        self._power_text = ""
         if self.tray is not None:
             self.tray.setToolTip("Adalight")
         self.btn_start.setText(tr("▶ Старт"))

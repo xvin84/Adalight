@@ -22,6 +22,7 @@ from .config import Config, parse_hex_color
 from .device import AdalightDevice, DeviceError
 from .effects import render_lamp
 from .geometry import LedGeometry, Slice
+from .pipeline import apply_frame_filters, has_frame_filters
 from .profiling import LoopProfiler
 from .schedule import ScheduleRule, brightness_at, parse_rules
 
@@ -164,6 +165,10 @@ class Engine:
         # потеря устройства на ходу не роняет цикл — ждём и переоткрываем порт
         self._device_ok = True
         self._reconnect_t = 0.0
+
+        # последний кадр, реально ушедший на ленту (после фильтров модов) —
+        # его же показываем в предпросмотре, чтобы UI не врал
+        self._sent = np.zeros((cfg.total_leds, 3), dtype=np.uint8)
 
         # живые параметры (могут меняться из GUI-потока)
         self._smooth = cfg.smooth
@@ -430,6 +435,11 @@ class Engine:
         Потеря устройства переводит движок в ожидание: кадры пропускаются,
         порт переоткрывается не чаще RECONNECT_INTERVAL_S. Порт открывается
         и закрывается только здесь, в потоке движка (pyserial не потокобезопасен).
+
+        Здесь же кадр проходит фильтры модов («Защита питания» и т.п.) — это
+        единственная точка отправки для всех режимов, поэтому фильтры работают
+        и в тестах ленты. Отправленный кадр остаётся в self._sent: именно его,
+        а не исходный, показывает предпросмотр.
         """
         if not self._device_ok:
             now = time.monotonic()
@@ -444,8 +454,10 @@ class Engine:
             if self._on_device is not None:
                 self._on_device(True)
             events.emit("device.restored", port=self.cfg.port)
+        out = apply_frame_filters(colors) if has_frame_filters() else colors
         try:
-            self.device.send_raw(colors)
+            self.device.send_raw(out)
+            self._sent = out
             return True
         except DeviceError:
             self.device.drop()
@@ -584,7 +596,7 @@ class Engine:
                         if sent:
                             fps.frame()
                             last_send = t0
-                            self._emit(final)
+                            self._emit(self._sent)
                             prof.mark("предпросмотр")
                 elif last_final is not None:
                     # нового кадра нет (статичный экран на DXGI-захвате)
@@ -600,8 +612,8 @@ class Engine:
                         if self._send(final):
                             fps.frame()
                             last_send = t0
-                            last_final = final
-                            self._emit(final)
+                            last_final = final  # для сна сравниваем кадр до фильтров
+                            self._emit(self._sent)
 
                 fps.poll()
                 dt = time.monotonic() - t0
@@ -630,7 +642,7 @@ class Engine:
                 final = self._apply_overlays(self.device.process(raw))
                 if self._send(final):
                     fps.frame()
-                    self._emit(final)
+                    self._emit(self._sent)
                 fps.poll()
                 dt = time.monotonic() - tick
                 if dt < frame_time:
@@ -670,7 +682,7 @@ class Engine:
                     final = self._apply_overlays(self.device.process(raw))
                     if self._send(final):
                         fps.frame()
-                        self._emit(final)
+                        self._emit(self._sent)
                 fps.poll()
         finally:
             audio.close()
@@ -696,7 +708,7 @@ class Engine:
                 lit = i
                 if self._send(colors):
                     fps.frame()
-                    self._emit(colors)
+                    self._emit(self._sent)
                 fps.poll()
                 dt = time.monotonic() - t0
                 if dt < frame_time:
@@ -718,7 +730,7 @@ class Engine:
                 t0 = time.monotonic()
                 if self._send(colors):
                     fps.frame()
-                    self._emit(colors)
+                    self._emit(self._sent)
                 fps.poll()
                 dt = time.monotonic() - t0
                 if dt < frame_time:
